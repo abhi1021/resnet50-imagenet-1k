@@ -1,0 +1,9 @@
+torch
+torchvision
+numpy
+matplotlib
+torchsummary
+tqdm
+albumentations
+grad-cam
+huggingface_hub
