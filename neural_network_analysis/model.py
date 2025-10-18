@@ -15,5 +15,8 @@ def build_resnet(model_name='resnet18', num_classes=200, pretrained=False):
 
     model = model_map[model_name](weights=None if not pretrained else 'IMAGENET1K_V1')
     in_features = model.fc.in_features
-    model.fc = nn.Linear(in_features, num_classes)
+    model.fc = nn.Sequential(
+        nn.Dropout(0.3),
+        nn.Linear(in_features, num_classes)
+    )
     return model

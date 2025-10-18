@@ -10,6 +10,20 @@ def get_transforms(img_size=64):
     train_transforms = A.Compose([
         A.RandomResizedCrop(size=(img_size, img_size), p=1.0),
         A.HorizontalFlip(p=0.5),
+        A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.1, rotate_limit=15, p=0.5),
+        A.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1, p=0.5),
+        A.OneOf([
+        A.CoarseDropout(
+            max_holes=1,
+            max_height=16,
+            max_width=16,
+            min_height=8,
+            min_width=8,
+            fill_value=tuple([int(x * 255) for x in [0.5071, 0.4867, 0.4408]]),
+            p=1.0
+            ),
+            A.GaussNoise(var_limit=(10.0, 50.0), p=1.0),
+            ], p=0.3),
         A.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
         ToTensorV2(),
     ])

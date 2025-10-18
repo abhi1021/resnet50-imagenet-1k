@@ -5,9 +5,13 @@ from tqdm import tqdm
 import os
 import json
 from huggingface_hub import HfApi
+try:
+    from torch.distributions import Beta as BetaDist
+except Exception:
+    BetaDist = None
 
 
-def train_epoch(model, device, train_loader, optimizer, scheduler=None, cutmix_prob=0.0):
+def train_epoch(model, device, train_loader, optimizer, scheduler=None, scheduler_step_per_batch=False, cutmix_prob=0.0, cutmix_alpha=1.0, label_smoothing=0.0):
     """Run one training epoch.
 
     Returns:
@@ -23,12 +27,54 @@ def train_epoch(model, device, train_loader, optimizer, scheduler=None, cutmix_p
     for batch_idx, (data, target) in enumerate(pbar):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
-        outputs = model(data)
-        loss = F.cross_entropy(outputs, target)
+
+        if np.random.rand() < cutmix_prob:
+            # CutMix
+            # sample lambda using torch Beta if available, otherwise numpy
+            if BetaDist is not None:
+                lam = BetaDist(cutmix_alpha, cutmix_alpha).sample().item()
+            else:
+                lam = np.random.beta(cutmix_alpha, cutmix_alpha)
+            batch_size = data.size(0)
+            index = torch.randperm(batch_size).to(data.device)
+            # bounding box
+            H, W = data.size(2), data.size(3)
+            cut_rat = np.sqrt(1. - lam)
+            cut_w = int(W * cut_rat)
+            cut_h = int(H * cut_rat)
+            cx = np.random.randint(W)
+            cy = np.random.randint(H)
+            x1 = np.clip(cx - cut_w // 2, 0, W)
+            x2 = np.clip(cx + cut_w // 2, 0, W)
+            y1 = np.clip(cy - cut_h // 2, 0, H)
+            y2 = np.clip(cy + cut_h // 2, 0, H)
+            data[:, :, y1:y2, x1:x2] = data[index, :, y1:y2, x1:x2]
+            # correct lambda to actual area
+            lam = 1 - ((x2 - x1) * (y2 - y1) / (W * H))
+            # Predict
+            outputs = model(data)
+            # Mix loss
+            if label_smoothing and label_smoothing > 0.0:
+                loss = lam * F.cross_entropy(outputs, target, label_smoothing=label_smoothing) + (1 - lam) * F.cross_entropy(outputs, target[index], label_smoothing=label_smoothing)
+            else:
+                loss = lam * F.cross_entropy(outputs, target) + (1 - lam) * F.cross_entropy(outputs, target[index])
+        else:
+            # Predict
+            outputs = model(data)
+            # Calculate loss (CrossEntropyLoss accepts raw logits)
+            if label_smoothing and label_smoothing > 0.0:
+                loss = F.cross_entropy(outputs, target, label_smoothing=label_smoothing)
+            else:
+                loss = F.cross_entropy(outputs, target)
+        
         loss.backward()
         optimizer.step()
-        if scheduler is not None:
-            scheduler.step()
+        # per-batch scheduler stepping is handled via scheduler_step_per_batch flag
+        if scheduler is not None and scheduler_step_per_batch:
+            try:
+                scheduler.step()
+            except TypeError:
+                pass
 
         pred = outputs.argmax(dim=1)
         correct += pred.eq(target).sum().item()
@@ -41,6 +87,7 @@ def train_epoch(model, device, train_loader, optimizer, scheduler=None, cutmix_p
         # Mirror previous behavior: show loss, batch id, and running accuracy
         pbar.set_description(desc=f'Loss={loss.item():.4f} Batch_id={batch_idx} Accuracy={running_acc:0.2f}')
 
+    # batch_losses are per-batch mean losses
     epoch_loss = float(np.mean(batch_losses)) if batch_losses else 0.0
     epoch_acc = 100. * correct / processed if processed > 0 else 0.0
     return epoch_loss, epoch_acc, batch_losses, batch_accs

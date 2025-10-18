@@ -15,10 +15,13 @@ def parse_args():
     p.add_argument('--train-dir', default='./tiny-imagenet-200/train')
     p.add_argument('--val-dir', default='./tiny-imagenet-200/val')
     p.add_argument('--model-dir', default='./saved_model')
-    p.add_argument('--batch-size', type=int, default=128)
+    p.add_argument('--batch-size', type=int, default=64)
     p.add_argument('--img-size', type=int, default=64)
     p.add_argument('--num-workers', type=int, default=0)
     p.add_argument('--epochs', type=int, default=30)
+    p.add_argument('--lr', type=float, default=0.01)
+    p.add_argument('--label-smoothing', type=float, default=0.1)
+    p.add_argument('--early-stop-patience', type=int, default=5)
     p.add_argument('--num-classes', type=int, default=200)
     return p.parse_args()
 
@@ -52,8 +55,14 @@ def main():
     model = model_mod.build_resnet('resnet18', num_classes=args.num_classes, pretrained=False)
     model = model.to(device)
 
-    optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
-    scheduler = None
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
+    # reduce LR when val loss plateaus (don't pass verbose for older torch versions)
+    scheduler = optim.lr_scheduler.OneCycleLR(
+        optimizer,
+        max_lr=0.1,
+        steps_per_epoch=len(train_loader),
+        epochs=args.epochs
+    )
 
     best_acc = 0.0
     # Metrics history (to match original script)
@@ -63,10 +72,19 @@ def main():
     test_acc = []
     train_losses_epoch = []
 
+    epochs_no_improve = 0
+    best_val_loss = float('inf')
     for epoch in range(args.epochs):
         print(f'EPOCH: {epoch}')
-        t_loss, t_acc, batch_losses, batch_accs = trainer.train_epoch(model, device, train_loader, optimizer, scheduler=scheduler)
+        t_loss, t_acc, batch_losses, batch_accs = trainer.train_epoch(model, device, train_loader, optimizer, scheduler=scheduler, cutmix_prob=0.5, label_smoothing=args.label_smoothing)
         v_loss, v_acc, v_batch_losses, v_batch_accs = trainer.evaluate(model, device, val_loader)
+
+        # scheduler step based on validation loss
+        if scheduler is not None:
+            try:
+                scheduler.step()
+            except Exception:
+                pass
 
         # Append per-batch data to global lists (original code appended per-batch for some lists)
         train_losses.extend(batch_losses)
@@ -79,7 +97,18 @@ def main():
 
         print(f'Epoch {epoch}: Train loss {t_loss:.4f}, Train acc {t_acc:.2f}%, Val loss {v_loss:.4f}, Val acc {v_acc:.2f}%')
 
+        # checkpointing and early stopping logic
         best_acc = trainer.save_checkpoint_if_best(model, optimizer, epoch, v_acc, best_acc, model_dir)
+
+        if v_loss < best_val_loss - 1e-4:
+            best_val_loss = v_loss
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
+
+        if epochs_no_improve >= args.early_stop_patience:
+            print(f'Early stopping: no improvement in val loss for {args.early_stop_patience} epochs')
+            break
 
 
 if __name__ == '__main__':
