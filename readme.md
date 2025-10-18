@@ -113,66 +113,74 @@ The training script supports extensive configuration through CLI arguments:
 #### Model Configuration
 
 ```bash
+# Configure WideResNet architecture
 python train.py \
-  --model wideresnet \           # Model architecture: 'wideresnet' or 'net'
-  --depth 28 \                   # WideResNet depth (default: 28)
-  --widen-factor 10 \            # WideResNet width multiplier (default: 10)
-  --dropout 0.3                  # Dropout rate (default: 0.3)
+  --model wideresnet \
+  --depth 28 \
+  --widen-factor 10 \
+  --dropout 0.3
 ```
 
 #### Training Configuration
 
 ```bash
+# Basic training parameters
 python train.py \
-  --epochs 100 \                 # Number of epochs (default: 100)
-  --batch-size 256 \             # Batch size (default: 256)
-  --num-workers 4 \              # Data loading workers (default: 4)
-  --data-dir ./data              # Data directory (default: ./data)
+  --epochs 100 \
+  --batch-size 256 \
+  --num-workers 4 \
+  --data-dir ./data
 ```
 
 #### Learning Rate & Optimization
 
 ```bash
+# Learning rate schedule and optimization settings
 python train.py \
-  --initial-lr 0.01 \            # Initial LR for warmup (default: 0.01)
-  --max-lr 0.1 \                 # Max LR after warmup (default: 0.1)
-  --min-lr 1e-4 \                # Min LR for cosine annealing (default: 1e-4)
-  --warmup-epochs 5 \            # Warmup epochs (default: 5)
-  --scheduler cosine \           # Scheduler: 'cosine' or 'onecycle'
-  --weight-decay 1e-3 \          # Weight decay (default: 1e-3)
-  --gradient-clip 1.0            # Gradient clipping max norm (default: 1.0)
+  --initial-lr 0.01 \
+  --max-lr 0.1 \
+  --min-lr 1e-4 \
+  --warmup-epochs 5 \
+  --scheduler cosine \
+  --weight-decay 1e-3 \
+  --gradient-clip 1.0
 ```
 
 #### Regularization & Augmentation
 
 ```bash
+# Configure regularization and data augmentation
 python train.py \
-  --label-smoothing 0.1 \        # Label smoothing (default: 0.1)
-  --mixup-alpha 0.2 \            # MixUp alpha (default: 0.2)
-  --no-mixup                     # Disable MixUp augmentation
+  --label-smoothing 0.1 \
+  --mixup-alpha 0.2
+
+# Or disable MixUp
+python train.py --no-mixup
 ```
 
 #### Training Optimizations
 
 ```bash
-python train.py \
-  --no-amp                       # Disable mixed precision training
+# Disable mixed precision training (enabled by default)
+python train.py --no-amp
 ```
 
 #### Checkpointing
 
 ```bash
+# Configure checkpoint saving
 python train.py \
-  --checkpoint-dir ./checkpoints \           # Checkpoint directory
-  --checkpoint-epochs 10 25 50 75            # Save at specific epochs
+  --checkpoint-dir ./checkpoints \
+  --checkpoint-epochs 10 25 50 75
 ```
 
 #### HuggingFace Integration
 
 ```bash
+# Enable automatic model upload to HuggingFace Hub
 python train.py \
-  --hf-token YOUR_HF_TOKEN \                 # HuggingFace API token
-  --hf-repo username/cifar100-model          # HuggingFace repo ID
+  --hf-token YOUR_HF_TOKEN \
+  --hf-repo username/cifar100-model
 ```
 
 ## Training Examples
