@@ -28,7 +28,7 @@ elif not TORCHSUMMARY_AVAILABLE:
     print("⚠ Using torchinfo for model summary (torchsummary not installed)")
 
 # Import data loading utilities
-from data import get_cifar100_loaders, get_imagenet_loaders
+from data import get_imagenet_loaders
 
 # Import model utilities
 from model import (
@@ -63,7 +63,7 @@ def get_device():
 
 class ImageClassificationTrainer:
     """
-    Trainer for image classification (CIFAR-100 and ImageNet) with advanced features:
+    Trainer for ImageNet image classification with advanced features:
     - Mixed precision training
     - MixUp augmentation
     - Label smoothing
@@ -106,14 +106,14 @@ class ImageClassificationTrainer:
         **model_kwargs
     ):
         """
-        Initialize image classification trainer.
+        Initialize ImageNet classification trainer.
 
         Args:
             model_name: Name of model ('resnet18', 'resnet34', 'resnet50', 'wideresnet', 'net')
-            dataset: Dataset to train on ('imagenet' or 'cifar100')
+            dataset: Dataset to train on ('imagenet')
             epochs: Number of training epochs
             batch_size: Batch size
-            data_dir: Directory for dataset (ImageNet root or CIFAR-100 data dir)
+            data_dir: Directory for dataset (ImageNet root directory)
             num_workers: Number of data loading workers
             initial_lr: Initial learning rate (for warmup)
             max_lr: Maximum learning rate (after warmup)
@@ -173,6 +173,19 @@ class ImageClassificationTrainer:
         # Pin memory only for CUDA (not beneficial for MPS)
         use_pin_memory = (self.device_type == 'cuda')
 
+        # MPS-specific optimizations
+        if self.device_type == 'mps':
+            # Limit workers for MPS - too many workers cause CPU bottleneck
+            if num_workers > 2:
+                print(f"⚠ Warning: num_workers={num_workers} may be too high for MPS.")
+                print(f"   Recommended: 0-2 workers for Apple Silicon GPU")
+                print(f"   Using num_workers=2 for better performance")
+                num_workers = 2
+            # Disable mixed precision on MPS (limited support)
+            if self.use_mixed_precision:
+                print("⚠ Warning: Disabling mixed precision for MPS (limited support)")
+                self.use_mixed_precision = False
+
         if self.dataset == 'imagenet':
             print(f"\nLoading ImageNet dataset from: {data_dir}")
             self.train_loader, self.test_loader, self.train_dataset, self.test_dataset = \
@@ -180,23 +193,15 @@ class ImageClassificationTrainer:
                     data_dir=data_dir,
                     batch_size=batch_size,
                     num_workers=num_workers,
-                    pin_memory=use_pin_memory
+                    pin_memory=use_pin_memory,
+                    persistent_workers=(num_workers > 0),
+                    prefetch_factor=2
                 )
             # Determine number of classes from dataset
             self.num_classes = len(self.train_dataset.classes)
             print(f"Detected {self.num_classes} classes in dataset")
-        elif self.dataset == 'cifar100':
-            print(f"\nLoading CIFAR-100 dataset")
-            self.train_loader, self.test_loader, self.train_dataset, self.test_dataset = \
-                get_cifar100_loaders(
-                    data_dir=data_dir,
-                    batch_size=batch_size,
-                    num_workers=num_workers,
-                    pin_memory=use_pin_memory
-                )
-            self.num_classes = 100
         else:
-            raise ValueError(f"Unknown dataset: {dataset}. Choose 'imagenet' or 'cifar100'")
+            raise ValueError(f"Unknown dataset: {dataset}. Only 'imagenet' is supported")
 
         # Initialize model with detected number of classes
         self.model = get_model(model_name, num_classes=self.num_classes, **model_kwargs).to(self.device)
@@ -302,6 +307,10 @@ class ImageClassificationTrainer:
         for batch_idx, (data, target) in enumerate(pbar):
             data, target = data.to(self.device), target.to(self.device)
             self.optimizer.zero_grad()
+
+            # MPS synchronization for accurate timing
+            if self.device_type == 'mps':
+                torch.mps.synchronize()
 
             # Mixed precision training
             if self.use_mixed_precision:
@@ -438,20 +447,20 @@ class ImageClassificationTrainer:
         model_card = f"""---
 tags:
 - image-classification
-- cifar100
+- imagenet
 - {self.model_name}
 - pytorch
 datasets:
-- cifar100
+- imagenet-1k
 metrics:
 - accuracy
 ---
 
-# CIFAR-100 {self.model_name.upper()}
+# ImageNet {self.model_name.upper()}
 
 ## Model Description
 
-{self.model_name.upper()} trained on CIFAR-100 dataset with advanced augmentation techniques.
+{self.model_name.upper()} trained on ImageNet-1K dataset with advanced augmentation techniques.
 
 ### Training Configuration
 - **Model**: {self.model_name}
@@ -489,9 +498,9 @@ model.eval()
 ```
 
 ### Dataset
-- **Dataset**: CIFAR-100 (50,000 train, 10,000 test)
-- **Classes**: 100
-- **Image Size**: 32×32
+- **Dataset**: ImageNet-1K (~1.28M train, 50K validation)
+- **Classes**: {self.num_classes}
+- **Image Size**: 224×224
 
 ### Files
 - `best_model.pth` - Best performing model
@@ -668,10 +677,7 @@ MIT
 
     def run(self):
         """Run the complete training process for all epochs."""
-        if self.dataset == 'imagenet':
-            dataset_name = f"ImageNet ({self.num_classes} classes)"
-        else:
-            dataset_name = "CIFAR-100"
+        dataset_name = f"ImageNet ({self.num_classes} classes)"
         print(f"\nTraining {self.model_name} for {self.epochs} epochs on {dataset_name}")
         print("="*70)
 
@@ -741,11 +747,11 @@ MIT
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description='Train image classification models on ImageNet or CIFAR-100')
+    parser = argparse.ArgumentParser(description='Train image classification models on ImageNet')
 
     # Dataset and model configuration
     parser.add_argument('--dataset', type=str, default='imagenet',
-                        choices=['imagenet', 'cifar100'],
+                        choices=['imagenet'],
                         help='Dataset to train on (default: imagenet)')
     parser.add_argument('--model', type=str, default='resnet50',
                         choices=['resnet18', 'resnet34', 'resnet50', 'wideresnet', 'net'],
@@ -755,7 +761,7 @@ if __name__ == "__main__":
     parser.add_argument('--batch-size', type=int, default=256,
                         help='Batch size (default: 256)')
     parser.add_argument('--data-dir', type=str, default='./data',
-                        help='Data directory (ImageNet root or CIFAR-100 dir) (default: ./data)')
+                        help='Data directory (ImageNet root directory) (default: ./data)')
     parser.add_argument('--num-workers', type=int, default=4,
                         help='Number of data loading workers (default: 4)')
 
