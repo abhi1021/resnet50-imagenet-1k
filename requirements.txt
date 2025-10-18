@@ -7,3 +7,4 @@ tqdm
 albumentations
 grad-cam
 huggingface_hub
+ipykernel
