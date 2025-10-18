@@ -8,23 +8,24 @@ import json
 from datetime import datetime
 
 # Optional imports for model summary - gracefully handle if not installed
-try:
-    from torchinfo import summary as torchinfo_summary
-    TORCHINFO_AVAILABLE = True
-except ImportError:
-    TORCHINFO_AVAILABLE = False
-
+# Prioritize torchsummary, then fallback to torchinfo
 try:
     from torchsummary import summary as torchsummary_summary
     TORCHSUMMARY_AVAILABLE = True
 except ImportError:
     TORCHSUMMARY_AVAILABLE = False
 
-if not TORCHINFO_AVAILABLE and not TORCHSUMMARY_AVAILABLE:
-    print("⚠ Warning: Neither torchinfo nor torchsummary is installed.")
-    print("   Install one with: pip install torchinfo  OR  pip install torchsummary")
-elif not TORCHINFO_AVAILABLE:
-    print("⚠ Using torchsummary for model summary (torchinfo not installed)")
+try:
+    from torchinfo import summary as torchinfo_summary
+    TORCHINFO_AVAILABLE = True
+except ImportError:
+    TORCHINFO_AVAILABLE = False
+
+if not TORCHSUMMARY_AVAILABLE and not TORCHINFO_AVAILABLE:
+    print("⚠ Warning: Neither torchsummary nor torchinfo is installed.")
+    print("   Install one with: pip install torchsummary  OR  pip install torchinfo")
+elif not TORCHSUMMARY_AVAILABLE:
+    print("⚠ Using torchinfo for model summary (torchsummary not installed)")
 
 # Import data loading utilities
 from data import get_cifar100_loaders, get_imagenet_loaders
@@ -557,30 +558,30 @@ MIT
         torchinfo_input_size = (1, 3, 224, 224) if self.dataset == 'imagenet' else (1, 3, 32, 32)
         torchsummary_input_size = (3, 224, 224) if self.dataset == 'imagenet' else (3, 32, 32)
 
-        # Try to use torchinfo.summary if available (preferred)
-        if TORCHINFO_AVAILABLE:
-            try:
-                torchinfo_summary(self.model, input_size=torchinfo_input_size, device=str(self.device))
-            except Exception as e:
-                print(f"\n⚠ torchinfo.summary failed: {e}")
-                # Try torchsummary as fallback
-                if TORCHSUMMARY_AVAILABLE:
-                    print("Falling back to torchsummary...\n")
-                    try:
-                        torchsummary_summary(self.model, input_size=torchsummary_input_size)
-                    except Exception as e2:
-                        print(f"\n⚠ torchsummary.summary also failed: {e2}")
-                else:
-                    print("⚠ No fallback available (torchsummary not installed)")
-        # Use torchsummary if torchinfo is not available
-        elif TORCHSUMMARY_AVAILABLE:
+        # Try to use torchsummary.summary first (preferred)
+        if TORCHSUMMARY_AVAILABLE:
             try:
                 torchsummary_summary(self.model, input_size=torchsummary_input_size)
             except Exception as e:
                 print(f"\n⚠ torchsummary.summary failed: {e}")
+                # Try torchinfo as fallback
+                if TORCHINFO_AVAILABLE:
+                    print("Falling back to torchinfo...\n")
+                    try:
+                        torchinfo_summary(self.model, input_size=torchinfo_input_size, device=str(self.device))
+                    except Exception as e2:
+                        print(f"\n⚠ torchinfo.summary also failed: {e2}")
+                else:
+                    print("⚠ No fallback available (torchinfo not installed)")
+        # Use torchinfo if torchsummary is not available
+        elif TORCHINFO_AVAILABLE:
+            try:
+                torchinfo_summary(self.model, input_size=torchinfo_input_size, device=str(self.device))
+            except Exception as e:
+                print(f"\n⚠ torchinfo.summary failed: {e}")
         else:
             print("\n⚠ No model summary libraries available.")
-            print("   Install with: pip install torchinfo  OR  pip install torchsummary")
+            print("   Install with: pip install torchsummary  OR  pip install torchinfo")
 
         print("="*70 + "\n")
 
