@@ -1,13 +1,24 @@
-# CIFAR-100 Training Framework
+# ImageNet-1k & CIFAR-100 Training Framework
 
-A modular PyTorch training framework for CIFAR-100 with advanced features including WideResNet-28-10, MixUp augmentation, mixed precision training, and HuggingFace Hub integration.
+A modular PyTorch training framework for ImageNet-1k and CIFAR-100 with advanced features including ResNet models (ResNet18/34/50), WideResNet-28-10, MixUp augmentation, mixed precision training, and HuggingFace Hub integration.
 
 ## Overview
 
-This repository provides a complete, production-ready training pipeline for CIFAR-100 image classification with state-of-the-art techniques:
+This repository provides a complete, production-ready training pipeline for image classification with state-of-the-art techniques:
 
-- **WideResNet-28-10** architecture (36.5M parameters)
-- **Advanced data augmentation** with Albumentations
+### Supported Models
+- **ResNet-18** (11.7M parameters) - Standard ImageNet architecture
+- **ResNet-34** (21.8M parameters) - Deeper standard ResNet
+- **ResNet-50** (25.6M parameters) - Bottleneck architecture for ImageNet
+- **WideResNet-28-10** (36.5M parameters) - Wide residual network for CIFAR-100
+- **Custom CNN** - Lightweight model for CIFAR-10
+
+### Supported Datasets
+- **ImageNet-1k** - 1000 classes, 1.2M training images, 224×224 resolution
+- **CIFAR-100** - 100 classes, 50K training images, 32×32 resolution
+
+### Advanced Features
+- **Advanced data augmentation** (Albumentations for CIFAR, standard augmentation for ImageNet)
 - **MixUp augmentation** for better generalization
 - **Mixed precision training** (FP16) for faster training
 - **Learning rate warmup** + Cosine annealing scheduler
@@ -32,7 +43,7 @@ This repository provides a complete, production-ready training pipeline for CIFA
 ✅ **Modular Architecture**
 - Separate modules for data, model, and training
 - Easy to extend and customize
-- Support for multiple model architectures
+- Support for multiple model architectures and datasets
 
 ✅ **Experiment Tracking**
 - Automatic checkpoint management
@@ -83,25 +94,41 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA av
 
 ## Quick Start
 
-### Basic Training
+### ImageNet Training (Default)
 
-Train WideResNet-28-10 on CIFAR-100 with default settings:
+Train ResNet-50 on ImageNet-1k with default settings:
 
 ```bash
-python train.py
+python train.py --data-dir /path/to/imagenet
+```
+
+This will:
+- Train ResNet-50 on ImageNet for 100 epochs
+- Use batch size 256 with all advanced features
+- Save checkpoints in `./checkpoints/`
+- Display training progress and plots
+
+### CIFAR-100 Training
+
+Train WideResNet-28-10 on CIFAR-100:
+
+```bash
+python train.py --dataset cifar100 --model wideresnet
 ```
 
 This will:
 - Download CIFAR-100 dataset automatically
 - Train for 100 epochs with batch size 256
 - Use all advanced features (MixUp, mixed precision, etc.)
-- Save checkpoints in `./checkpoints/`
-- Display training progress and plots
 
-### Simple Training (10 epochs)
+### Quick Test (10 epochs)
 
 ```bash
-python train.py --epochs 10 --batch-size 128
+# ImageNet
+python train.py --data-dir /path/to/imagenet --epochs 10 --batch-size 128
+
+# CIFAR-100
+python train.py --dataset cifar100 --model wideresnet --epochs 10 --batch-size 128
 ```
 
 ## Usage
@@ -110,11 +137,24 @@ python train.py --epochs 10 --batch-size 128
 
 The training script supports extensive configuration through CLI arguments:
 
-#### Model Configuration
+#### Dataset and Model Selection
 
 ```bash
-# Configure WideResNet architecture
+# Train ResNet-50 on ImageNet (default)
 python train.py \
+  --dataset imagenet \
+  --model resnet50 \
+  --data-dir /path/to/imagenet
+
+# Train ResNet-18 on ImageNet
+python train.py \
+  --dataset imagenet \
+  --model resnet18 \
+  --data-dir /path/to/imagenet
+
+# Train WideResNet on CIFAR-100
+python train.py \
+  --dataset cifar100 \
   --model wideresnet \
   --depth 28 \
   --widen-factor 10 \
@@ -183,9 +223,112 @@ python train.py \
   --hf-repo username/cifar100-model
 ```
 
+## ImageNet Dataset Setup
+
+The ImageNet dataset must be manually downloaded and organized. Follow these steps:
+
+### Download ImageNet
+
+1. **Register and download** from the official ImageNet website:
+   - Visit: https://image-net.org/download.php
+   - You need to create an account and agree to terms
+   - Download ILSVRC2012 (ImageNet Large Scale Visual Recognition Challenge 2012)
+   - Files needed: `ILSVRC2012_img_train.tar` and `ILSVRC2012_img_val.tar`
+
+2. **Alternative sources**:
+   - Academic Torrents: https://academictorrents.com/details/a306397ccf9c2ead27155983c254227c0fd938e2
+   - Kaggle: https://www.kaggle.com/c/imagenet-object-localization-challenge/data
+
+### Organize Dataset Structure
+
+After downloading, organize the dataset as follows:
+
+```bash
+# Create directory structure
+mkdir -p /path/to/imagenet/train
+mkdir -p /path/to/imagenet/val
+
+# Extract training data
+cd /path/to/imagenet/train
+tar -xf ILSVRC2012_img_train.tar
+
+# Each training tar file contains one class
+for f in *.tar; do
+  d=$(basename "$f" .tar)
+  mkdir -p "$d"
+  tar -xf "$f" -C "$d"
+  rm "$f"
+done
+
+# Extract validation data
+cd /path/to/imagenet/val
+tar -xf ILSVRC2012_img_val.tar
+
+# Organize validation images into class folders
+# Download the validation ground truth file
+wget https://raw.githubusercontent.com/soumith/imagenetloader.torch/master/valprep.sh
+bash valprep.sh
+```
+
+### Expected Directory Structure
+
+```
+/path/to/imagenet/
+├── train/
+│   ├── n01440764/     # Each folder = one class
+│   │   ├── n01440764_10026.JPEG
+│   │   ├── n01440764_10027.JPEG
+│   │   └── ...
+│   ├── n01443537/
+│   │   └── ...
+│   └── ... (1000 classes total)
+├── val/
+│   ├── n01440764/
+│   │   ├── ILSVRC2012_val_00000293.JPEG
+│   │   └── ...
+│   ├── n01443537/
+│   │   └── ...
+│   └── ... (1000 classes total)
+```
+
+### Dataset Statistics
+
+- **Total size**: ~150GB (training + validation)
+- **Training images**: 1,281,167 images across 1,000 classes
+- **Validation images**: 50,000 images (50 per class)
+- **Image format**: JPEG
+- **Image size**: Variable (will be resized to 224×224 during training)
+
 ## Training Examples
 
-### Example 1: Quick Test Run (Fast Training)
+### Example 1: ResNet-50 on ImageNet
+
+Standard ResNet-50 training on ImageNet:
+
+```bash
+python train.py \
+  --dataset imagenet \
+  --model resnet50 \
+  --data-dir /path/to/imagenet \
+  --epochs 90 \
+  --batch-size 256 \
+  --checkpoint-epochs 30 60 90
+```
+
+### Example 2: ResNet-18 on ImageNet (Faster Training)
+
+Lighter model for faster experimentation:
+
+```bash
+python train.py \
+  --dataset imagenet \
+  --model resnet18 \
+  --data-dir /path/to/imagenet \
+  --epochs 90 \
+  --batch-size 512
+```
+
+### Example 3: Quick Test Run (Fast Training)
 
 For testing and debugging:
 
@@ -261,14 +404,21 @@ python train.py \
 
 ## CLI Options Reference
 
+### Dataset Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--dataset` | str | `imagenet` | Dataset to train on (`imagenet`, `cifar100`) |
+| `--data-dir` | str | `./data` | Data directory (ImageNet root or CIFAR-100 dir) |
+
 ### Model Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--model` | str | `wideresnet` | Model architecture (`wideresnet`, `net`) |
-| `--depth` | int | `28` | WideResNet depth |
-| `--widen-factor` | int | `10` | WideResNet width multiplier |
-| `--dropout` | float | `0.3` | Dropout rate |
+| `--model` | str | `resnet50` | Model architecture (`resnet18`, `resnet34`, `resnet50`, `wideresnet`, `net`) |
+| `--depth` | int | `28` | WideResNet depth (only for WideResNet) |
+| `--widen-factor` | int | `10` | WideResNet width multiplier (only for WideResNet) |
+| `--dropout` | float | `0.3` | Dropout rate (only for WideResNet) |
 
 ### Training Options
 
@@ -342,9 +492,49 @@ python train.py \
 └── data/                # CIFAR-100 dataset (auto-downloaded)
 ```
 
-## Model Architecture
+## Model Architectures
 
-### WideResNet-28-10
+### ResNet-18 (ImageNet)
+
+- **Parameters**: 11.7M
+- **Layers**: 18 (2-2-2-2 block configuration)
+- **Input**: 224×224 RGB images
+- **Output**: 1000 classes
+
+Architecture:
+- 7×7 conv, stride 2 → BatchNorm → ReLU → MaxPool
+- Residual Block 1: 64 channels (2 basic blocks)
+- Residual Block 2: 128 channels (2 basic blocks, stride 2)
+- Residual Block 3: 256 channels (2 basic blocks, stride 2)
+- Residual Block 4: 512 channels (2 basic blocks, stride 2)
+- Global average pooling → FC(512 → 1000)
+
+### ResNet-34 (ImageNet)
+
+- **Parameters**: 21.8M
+- **Layers**: 34 (3-4-6-3 block configuration)
+- **Input**: 224×224 RGB images
+- **Output**: 1000 classes
+
+Similar to ResNet-18 but with more blocks per stage.
+
+### ResNet-50 (ImageNet)
+
+- **Parameters**: 25.6M
+- **Layers**: 50 (3-4-6-3 bottleneck configuration)
+- **Input**: 224×224 RGB images
+- **Output**: 1000 classes
+
+Architecture:
+- Uses bottleneck blocks (1×1 → 3×3 → 1×1 convolutions)
+- 4× channel expansion in bottleneck
+- Residual Block 1: 64→256 channels (3 bottleneck blocks)
+- Residual Block 2: 128→512 channels (4 bottleneck blocks, stride 2)
+- Residual Block 3: 256→1024 channels (6 bottleneck blocks, stride 2)
+- Residual Block 4: 512→2048 channels (3 bottleneck blocks, stride 2)
+- Global average pooling → FC(2048 → 1000)
+
+### WideResNet-28-10 (CIFAR-100)
 
 - **Parameters**: 36.5M
 - **Depth**: 28 layers
@@ -361,23 +551,36 @@ Architecture details:
 - Global average pooling
 - Fully connected: 640→100
 
-### Legacy CNN (Net)
+### Legacy CNN (Net - CIFAR-10)
 
 Smaller custom CNN for CIFAR-10 compatibility (backward compatible).
 
 ## Data Augmentation
 
-### Training Augmentations (Albumentations)
+### ImageNet Augmentations
 
+**Training:**
+- RandomResizedCrop(224) - Random crop and resize
+- RandomHorizontalFlip(p=0.5)
+- ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4)
+- Normalization (mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+**Validation:**
+- Resize(256)
+- CenterCrop(224)
+- Normalization (ImageNet mean/std)
+
+### CIFAR-100 Augmentations (Albumentations)
+
+**Training:**
 - HorizontalFlip (p=0.5)
 - ShiftScaleRotate (shift=0.0625, scale=0.1, rotate=15°)
 - CoarseDropout/Cutout (8×8 holes)
 - RandomBrightnessContrast (±0.2)
 - HueSaturationValue
-- Normalization (CIFAR-100 mean/std)
+- Normalization (mean=[0.5071, 0.4865, 0.4409], std=[0.2673, 0.2564, 0.2761])
 
-### Test Augmentations
-
+**Test:**
 - Normalization only
 
 ## Output Files
@@ -514,8 +717,29 @@ python train.py --batch-size 128 --no-amp
 
 ## Expected Results
 
-With default settings (WideResNet-28-10, 100 epochs):
+### ImageNet (90 epochs)
 
+#### ResNet-18
+- **Training Time** (NVIDIA A100): ~24 hours
+- **Training Time** (NVIDIA RTX 3090): ~36 hours
+- **Expected Top-1 Accuracy**: 69-70%
+- **Expected Top-5 Accuracy**: 89-90%
+
+#### ResNet-34
+- **Training Time** (NVIDIA A100): ~36 hours
+- **Training Time** (NVIDIA RTX 3090): ~48 hours
+- **Expected Top-1 Accuracy**: 73-74%
+- **Expected Top-5 Accuracy**: 91-92%
+
+#### ResNet-50
+- **Training Time** (NVIDIA A100): ~48 hours
+- **Training Time** (NVIDIA RTX 3090): ~60-72 hours
+- **Expected Top-1 Accuracy**: 75-76%
+- **Expected Top-5 Accuracy**: 92-93%
+
+### CIFAR-100 (100 epochs)
+
+#### WideResNet-28-10
 - **Training Time** (NVIDIA RTX 3090): ~2-3 hours
 - **Training Time** (Apple M1 Pro): ~4-6 hours
 - **Expected Test Accuracy**: 70-75%
@@ -526,9 +750,9 @@ With default settings (WideResNet-28-10, 100 epochs):
 If you use this code in your research, please cite:
 
 ```bibtex
-@misc{cifar100-training,
+@misc{imagenet-cifar-training,
   author = {Your Name},
-  title = {CIFAR-100 Training Framework with WideResNet},
+  title = {ImageNet-1k and CIFAR-100 Training Framework with ResNet and WideResNet},
   year = {2025},
   publisher = {GitHub},
   url = {https://github.com/yourusername/resnet50-imagenet-1k}
@@ -541,8 +765,10 @@ MIT License - see LICENSE file for details
 
 ## Acknowledgments
 
+- ResNet architecture: [Deep Residual Learning for Image Recognition](https://arxiv.org/abs/1512.03385)
 - WideResNet architecture: [Wide Residual Networks](https://arxiv.org/abs/1605.07146)
 - MixUp augmentation: [mixup: Beyond Empirical Risk Minimization](https://arxiv.org/abs/1710.09412)
+- ImageNet dataset: [ImageNet Large Scale Visual Recognition Challenge](https://arxiv.org/abs/1409.0575)
 - CIFAR-100 dataset: [Learning Multiple Layers of Features from Tiny Images](https://www.cs.toronto.edu/~kriz/learning-features-2009-TR.pdf)
 
 ## Contributing

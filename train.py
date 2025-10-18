@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 
 # Import data loading utilities
-from data import get_cifar100_loaders
+from data import get_cifar100_loaders, get_imagenet_loaders
 
 # Import model utilities
 from model import (
@@ -42,9 +42,9 @@ def get_device():
     return device, device_type
 
 
-class CIFAR100Trainer:
+class ImageClassificationTrainer:
     """
-    Trainer for CIFAR-100 with advanced features:
+    Trainer for image classification (CIFAR-100 and ImageNet) with advanced features:
     - Mixed precision training
     - MixUp augmentation
     - Label smoothing
@@ -56,7 +56,8 @@ class CIFAR100Trainer:
 
     def __init__(
         self,
-        model_name='wideresnet',
+        model_name='resnet50',
+        dataset='imagenet',
         epochs=100,
         batch_size=256,
         data_dir='./data',
@@ -86,13 +87,14 @@ class CIFAR100Trainer:
         **model_kwargs
     ):
         """
-        Initialize CIFAR-100 trainer.
+        Initialize image classification trainer.
 
         Args:
-            model_name: Name of model ('wideresnet' or 'net')
+            model_name: Name of model ('resnet18', 'resnet34', 'resnet50', 'wideresnet', 'net')
+            dataset: Dataset to train on ('imagenet' or 'cifar100')
             epochs: Number of training epochs
             batch_size: Batch size
-            data_dir: Directory for CIFAR-100 data
+            data_dir: Directory for dataset (ImageNet root or CIFAR-100 data dir)
             num_workers: Number of data loading workers
             initial_lr: Initial learning rate (for warmup)
             max_lr: Maximum learning rate (after warmup)
@@ -112,11 +114,12 @@ class CIFAR100Trainer:
             **model_kwargs: Additional model-specific arguments
         """
         self.model_name = model_name
+        self.dataset = dataset.lower()
         self.epochs = epochs
         self.batch_size = batch_size
         self.device, self.device_type = get_device()
 
-        # Learning rate settings
+        # Learning rate settings (num_classes will be determined after loading dataset)
         self.initial_lr = initial_lr
         self.max_lr = max_lr
         self.min_lr = min_lr
@@ -147,19 +150,37 @@ class CIFAR100Trainer:
         if self.hf_token and self.hf_repo:
             self._setup_huggingface()
 
-        # Initialize model
-        self.model = get_model(model_name, num_classes=100, **model_kwargs).to(self.device)
-
-        # Setup data loaders
+        # Setup data loaders first to determine number of classes
         # Pin memory only for CUDA (not beneficial for MPS)
         use_pin_memory = (self.device_type == 'cuda')
-        self.train_loader, self.test_loader, self.train_dataset, self.test_dataset = \
-            get_cifar100_loaders(
-                data_dir=data_dir,
-                batch_size=batch_size,
-                num_workers=num_workers,
-                pin_memory=use_pin_memory
-            )
+
+        if self.dataset == 'imagenet':
+            print(f"\nLoading ImageNet dataset from: {data_dir}")
+            self.train_loader, self.test_loader, self.train_dataset, self.test_dataset = \
+                get_imagenet_loaders(
+                    data_dir=data_dir,
+                    batch_size=batch_size,
+                    num_workers=num_workers,
+                    pin_memory=use_pin_memory
+                )
+            # Determine number of classes from dataset
+            self.num_classes = len(self.train_dataset.classes)
+            print(f"Detected {self.num_classes} classes in dataset")
+        elif self.dataset == 'cifar100':
+            print(f"\nLoading CIFAR-100 dataset")
+            self.train_loader, self.test_loader, self.train_dataset, self.test_dataset = \
+                get_cifar100_loaders(
+                    data_dir=data_dir,
+                    batch_size=batch_size,
+                    num_workers=num_workers,
+                    pin_memory=use_pin_memory
+                )
+            self.num_classes = 100
+        else:
+            raise ValueError(f"Unknown dataset: {dataset}. Choose 'imagenet' or 'cifar100'")
+
+        # Initialize model with detected number of classes
+        self.model = get_model(model_name, num_classes=self.num_classes, **model_kwargs).to(self.device)
 
         # Setup optimizer and scheduler
         self.optimizer = get_optimizer(
@@ -498,11 +519,14 @@ MIT
         print("="*70)
         print(f"Device: {self.device}")
         print(f"Model: {self.model_name}")
+        print(f"Number of classes: {self.num_classes}")
         print(f"Mixed Precision: {self.use_mixed_precision}")
         print(f"MixUp: {self.use_mixup} (alpha={self.mixup_alpha})")
         print(f"Label Smoothing: {self.label_smoothing}")
         print("\nModel Summary:")
-        summary(self.model, input_size=(1, 3, 32, 32), device=self.device)
+        # Use appropriate input size based on dataset
+        input_size = (1, 3, 224, 224) if self.dataset == 'imagenet' else (1, 3, 32, 32)
+        summary(self.model, input_size=input_size, device=self.device)
         print("="*70 + "\n")
 
     def plot_metrics(self):
@@ -588,7 +612,11 @@ MIT
 
     def run(self):
         """Run the complete training process for all epochs."""
-        print(f"\nTraining {self.model_name} for {self.epochs} epochs on CIFAR-100")
+        if self.dataset == 'imagenet':
+            dataset_name = f"ImageNet ({self.num_classes} classes)"
+        else:
+            dataset_name = "CIFAR-100"
+        print(f"\nTraining {self.model_name} for {self.epochs} epochs on {dataset_name}")
         print("="*70)
 
         # Print model summary before training
@@ -657,18 +685,21 @@ MIT
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description='Train CIFAR-100 model with advanced features')
+    parser = argparse.ArgumentParser(description='Train image classification models on ImageNet or CIFAR-100')
 
-    # Model configuration
-    parser.add_argument('--model', type=str, default='wideresnet',
-                        choices=['wideresnet', 'net'],
-                        help='Model architecture (default: wideresnet)')
+    # Dataset and model configuration
+    parser.add_argument('--dataset', type=str, default='imagenet',
+                        choices=['imagenet', 'cifar100'],
+                        help='Dataset to train on (default: imagenet)')
+    parser.add_argument('--model', type=str, default='resnet50',
+                        choices=['resnet18', 'resnet34', 'resnet50', 'wideresnet', 'net'],
+                        help='Model architecture (default: resnet50)')
     parser.add_argument('--epochs', type=int, default=100,
                         help='Number of training epochs (default: 100)')
     parser.add_argument('--batch-size', type=int, default=256,
                         help='Batch size (default: 256)')
     parser.add_argument('--data-dir', type=str, default='./data',
-                        help='Data directory (default: ./data)')
+                        help='Data directory (ImageNet root or CIFAR-100 dir) (default: ./data)')
     parser.add_argument('--num-workers', type=int, default=4,
                         help='Number of data loading workers (default: 4)')
 
@@ -736,8 +767,9 @@ if __name__ == "__main__":
         }
 
     # Create trainer
-    trainer = CIFAR100Trainer(
+    trainer = ImageClassificationTrainer(
         model_name=args.model,
+        dataset=args.dataset,
         epochs=args.epochs,
         batch_size=args.batch_size,
         data_dir=args.data_dir,

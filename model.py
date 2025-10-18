@@ -304,6 +304,176 @@ def get_scheduler(optimizer, train_loader, scheduler_type='cosine', epochs=100):
 
 
 # ------------------------------
+# Standard ResNet Architectures for ImageNet
+# ------------------------------
+class BasicResNetBlock(nn.Module):
+    """Basic ResNet block for ResNet-18 and ResNet-34."""
+    expansion = 1
+
+    def __init__(self, in_channels, out_channels, stride=1, downsample=None):
+        super(BasicResNetBlock, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3,
+                               stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3,
+                               stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.downsample = downsample
+
+    def forward(self, x):
+        identity = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        out += identity
+        out = self.relu(out)
+
+        return out
+
+
+class BottleneckResNetBlock(nn.Module):
+    """Bottleneck ResNet block for ResNet-50, ResNet-101, ResNet-152."""
+    expansion = 4
+
+    def __init__(self, in_channels, out_channels, stride=1, downsample=None):
+        super(BottleneckResNetBlock, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3,
+                               stride=stride, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.conv3 = nn.Conv2d(out_channels, out_channels * self.expansion,
+                               kernel_size=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(out_channels * self.expansion)
+        self.relu = nn.ReLU(inplace=True)
+        self.downsample = downsample
+
+    def forward(self, x):
+        identity = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu(out)
+
+        out = self.conv3(out)
+        out = self.bn3(out)
+
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        out += identity
+        out = self.relu(out)
+
+        return out
+
+
+class ResNet(nn.Module):
+    """
+    Standard ResNet architecture for ImageNet classification.
+
+    Supports ResNet-18, ResNet-34, ResNet-50, ResNet-101, ResNet-152.
+
+    Args:
+        block: Type of residual block (BasicResNetBlock or BottleneckResNetBlock)
+        layers: List of number of blocks in each stage [stage1, stage2, stage3, stage4]
+        num_classes: Number of output classes (default: 1000 for ImageNet)
+    """
+
+    def __init__(self, block, layers, num_classes=1000):
+        super(ResNet, self).__init__()
+        self.in_channels = 64
+
+        # Initial conv layer: 7x7 conv, stride 2
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.relu = nn.ReLU(inplace=True)
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
+        # Residual blocks
+        self.layer1 = self._make_layer(block, 64, layers[0], stride=1)
+        self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
+        self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
+        self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+
+        # Classification head
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Linear(512 * block.expansion, num_classes)
+
+        # Initialize weights
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    def _make_layer(self, block, out_channels, blocks, stride=1):
+        """Create a residual layer with multiple blocks."""
+        downsample = None
+        if stride != 1 or self.in_channels != out_channels * block.expansion:
+            downsample = nn.Sequential(
+                nn.Conv2d(self.in_channels, out_channels * block.expansion,
+                         kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels * block.expansion),
+            )
+
+        layers = []
+        layers.append(block(self.in_channels, out_channels, stride, downsample))
+        self.in_channels = out_channels * block.expansion
+
+        for _ in range(1, blocks):
+            layers.append(block(self.in_channels, out_channels))
+
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        # Input: (N, 3, 224, 224)
+        x = self.conv1(x)      # → (N, 64, 112, 112)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)    # → (N, 64, 56, 56)
+
+        x = self.layer1(x)     # → (N, 64/256, 56, 56)
+        x = self.layer2(x)     # → (N, 128/512, 28, 28)
+        x = self.layer3(x)     # → (N, 256/1024, 14, 14)
+        x = self.layer4(x)     # → (N, 512/2048, 7, 7)
+
+        x = self.avgpool(x)    # → (N, 512/2048, 1, 1)
+        x = torch.flatten(x, 1)
+        x = self.fc(x)         # → (N, num_classes)
+
+        return x
+
+
+def resnet18(num_classes=1000):
+    """ResNet-18 model."""
+    return ResNet(BasicResNetBlock, [2, 2, 2, 2], num_classes=num_classes)
+
+
+def resnet34(num_classes=1000):
+    """ResNet-34 model."""
+    return ResNet(BasicResNetBlock, [3, 4, 6, 3], num_classes=num_classes)
+
+
+def resnet50(num_classes=1000):
+    """ResNet-50 model."""
+    return ResNet(BottleneckResNetBlock, [3, 4, 6, 3], num_classes=num_classes)
+
+
+# ------------------------------
 # Model Factory Function
 # ------------------------------
 def get_model(model_name='wideresnet', num_classes=100, **kwargs):
@@ -311,16 +481,25 @@ def get_model(model_name='wideresnet', num_classes=100, **kwargs):
     Factory function to get model by name.
 
     Args:
-        model_name: Name of model ('wideresnet' or 'net')
+        model_name: Name of model ('wideresnet', 'net', 'resnet18', 'resnet34', 'resnet50')
         num_classes: Number of output classes
         **kwargs: Additional model-specific arguments
 
     Returns:
         model: Instantiated model
     """
-    if model_name.lower() == 'wideresnet':
+    model_name_lower = model_name.lower()
+
+    if model_name_lower == 'wideresnet':
         return WideResNet(num_classes=num_classes, **kwargs)
-    elif model_name.lower() == 'net':
+    elif model_name_lower == 'net':
         return Net()
+    elif model_name_lower == 'resnet18':
+        return resnet18(num_classes=num_classes)
+    elif model_name_lower == 'resnet34':
+        return resnet34(num_classes=num_classes)
+    elif model_name_lower == 'resnet50':
+        return resnet50(num_classes=num_classes)
     else:
-        raise ValueError(f"Unknown model: {model_name}")
+        raise ValueError(f"Unknown model: {model_name}. "
+                        f"Available models: wideresnet, net, resnet18, resnet34, resnet50")
