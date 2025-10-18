@@ -31,7 +31,8 @@ def main():
     os.makedirs(model_dir, exist_ok=True)
 
     device = utils.get_device()
-    pin_memory = (device.type == 'cuda')
+    # Pin memory for both CUDA and MPS to speed up data transfer
+    pin_memory = (device.type in ['cuda', 'mps'])
 
     train_loader, val_loader, train_ds = data.get_dataloaders(
         train_dir, val_dir, batch_size=args.batch_size, img_size=args.img_size, num_workers=args.num_workers, pin_memory=pin_memory

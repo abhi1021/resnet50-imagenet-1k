@@ -77,7 +77,9 @@ def show_gradcam_batch(model, device, loader, classes=None, target_layer=None, n
         print(f"[grad-cam] detected version: {gradcam_version}")
 
     # pytorch-grad-cam expects a list of target layers (target_layers)
-    cam = GradCAM(model=model, target_layers=[target_layer], use_cuda=(device.type == 'cuda'))
+    # use_cuda=True works for both CUDA and MPS devices
+    use_gpu = device.type in ['cuda', 'mps']
+    cam = GradCAM(model=model, target_layers=[target_layer], use_cuda=use_gpu)
     targets = [ClassifierOutputTarget(int(labels[i].item())) for i in range(len(labels))]
 
     # Try multiple call signatures to handle different grad-cam versions
