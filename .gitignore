@@ -1,0 +1,29 @@
+# Ignore tiny ImageNet dataset folder
+tiny-imagenet-200/
+tiny-imagenet-200.zip
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.env/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# PyTorch
+*.pt
+*.pth
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
