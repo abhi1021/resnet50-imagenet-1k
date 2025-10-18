@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
-from torchsummary import summary
+from torchinfo import summary
 import matplotlib.pyplot as plt
 import plotille
 import os
@@ -502,7 +502,7 @@ MIT
         print(f"MixUp: {self.use_mixup} (alpha={self.mixup_alpha})")
         print(f"Label Smoothing: {self.label_smoothing}")
         print("\nModel Summary:")
-        summary(self.model, input_size=(3, 32, 32))
+        summary(self.model, input_size=(1, 3, 32, 32), device=self.device)
         print("="*70 + "\n")
 
     def plot_metrics(self):
