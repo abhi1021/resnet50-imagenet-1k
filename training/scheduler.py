@@ -5,33 +5,6 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, OneCycleLR
 
 
-class WarmupScheduler:
-    """
-    Learning rate warmup scheduler.
-
-    Gradually increases learning rate from initial_lr to target_lr over warmup_steps.
-    """
-
-    def __init__(self, optimizer, warmup_epochs, initial_lr, target_lr, steps_per_epoch):
-        self.optimizer = optimizer
-        self.warmup_steps = warmup_epochs * steps_per_epoch
-        self.initial_lr = initial_lr
-        self.target_lr = target_lr
-        self.current_step = 0
-
-    def step(self):
-        """Update learning rate for one step."""
-        if self.current_step < self.warmup_steps:
-            lr = self.initial_lr + (self.target_lr - self.initial_lr) * self.current_step / self.warmup_steps
-            for param_group in self.optimizer.param_groups:
-                param_group['lr'] = lr
-        self.current_step += 1
-
-    def is_warmup(self):
-        """Check if still in warmup phase."""
-        return self.current_step < self.warmup_steps
-
-
 def get_scheduler(name, optimizer, train_loader, epochs=100, config=None):
     """
     Get learning rate scheduler by name.

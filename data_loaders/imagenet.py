@@ -1,5 +1,5 @@
 """
-ImageNet dataset with flexible transforms support.
+ImageNet dataset with Albumentations transforms.
 """
 from torchvision import datasets
 from .base import BaseDataset
@@ -8,71 +8,58 @@ from .transforms import get_imagenet_transforms
 
 class ImageNetDataset(BaseDataset):
     """
-    ImageNet dataset wrapper with flexible augmentation.
-
-    Supports both ImageNet-1K (1000 classes) and smaller variants like ImageNette.
-    Automatically detects number of classes from the dataset directory structure.
+    ImageNet dataset wrapper with Albumentations augmentation.
+    Supports both full ImageNet-1K (1000 classes) and subsets like ImageNette (10 classes).
 
     Attributes:
         MEAN: Normalization mean values (ImageNet statistics)
         STD: Normalization std values (ImageNet statistics)
-        IMAGE_SIZE: Image dimensions after transforms (height, width)
+        NUM_CLASSES: Default number of classes (1000 for full ImageNet-1K)
+        IMAGE_SIZE: Image dimensions (height, width)
     """
 
     # ImageNet dataset statistics
     MEAN = (0.485, 0.456, 0.406)
     STD = (0.229, 0.224, 0.225)
+    NUM_CLASSES = 1000
     IMAGE_SIZE = (224, 224)
 
-    def __init__(self, train=True, data_dir='./data', augmentation='strong', **kwargs):
+    def __init__(self, train=True, data_dir='../data/imagenet', augmentation='strong', num_classes=None):
         """
         Initialize ImageNet dataset.
 
         Args:
-            train: Whether to load train or val split
-            data_dir: Root directory of ImageNet dataset
-                     Expected structure:
-                     data_dir/
-                         train/
-                             n01440764/
-                                 image1.JPEG
-                                 ...
-                             n01443537/
-                                 ...
-                         val/
-                             n01440764/
-                                 image1.JPEG
-                                 ...
+            train: Whether to load train or test split
+            data_dir: Directory containing ImageNet dataset with train/val folders
             augmentation: Augmentation strength ('none', 'weak', 'strong')
                          Only applies to training data
-            **kwargs: Additional arguments (unused, for compatibility)
-
-        Note:
-            The number of classes is automatically detected from the dataset.
-            This allows the same code to work with:
-            - Full ImageNet-1K (1000 classes, ~1.28M train images)
-            - ImageNette (10 classes, subset of ImageNet)
-            - Custom ImageNet subsets
+            num_classes: Number of classes to use (default: 1000 for full ImageNet-1K)
+                        Set to 10 for ImageNette/ImageWoof subsets
         """
         self.train = train
         self.data_dir = data_dir
         self.augmentation = augmentation if train else 'none'
+        self.num_classes = num_classes if num_classes is not None else self.NUM_CLASSES
 
         # Get appropriate transforms
         self.transform = self.get_transforms(self.augmentation)
 
-        # Determine which split to load
-        split_dir = f"{self.data_dir}/train" if self.train else f"{self.data_dir}/val"
+        # Determine split folder name
+        split = 'train' if train else 'val'
+        dataset_path = f"{self.data_dir}/{split}"
 
         # Load ImageNet dataset using ImageFolder
-        # This automatically infers the number of classes from directory structure
         self.dataset = datasets.ImageFolder(
-            root=split_dir,
+            root=dataset_path,
             transform=self.transform
         )
 
-        # Store number of classes (detected from dataset)
-        self.num_classes = len(self.dataset.classes)
+        # Validate number of classes
+        actual_num_classes = len(self.dataset.classes)
+        if self.num_classes != actual_num_classes:
+            print(f"⚠ Warning: Specified num_classes={self.num_classes} but dataset has {actual_num_classes} classes")
+            print(f"   Using actual dataset classes: {actual_num_classes}")
+            self.num_classes = actual_num_classes
 
     def __len__(self):
         """Return the number of samples in the dataset."""
@@ -108,24 +95,42 @@ class ImageNetDataset(BaseDataset):
         )
 
     @classmethod
-    def get_info(cls):
+    def get_info(cls, num_classes=None):
         """
         Get dataset metadata.
 
+        Args:
+            num_classes: Number of classes (default: 1000 for full ImageNet-1K)
+
         Returns:
             dict: Metadata including num_classes, image_size, mean, std, etc.
-
-        Note:
-            num_classes and sample counts are for full ImageNet-1K.
-            For subsets like ImageNette, these will be different at runtime.
         """
+        num_classes = num_classes if num_classes is not None else cls.NUM_CLASSES
+
+        # Adjust sample counts based on dataset type
+        if num_classes == 10:
+            # ImageNette/ImageWoof approximate counts
+            train_samples = 9469  # Approximate for ImageNette
+            test_samples = 3925
+            description = '10-class ImageNet subset (e.g., ImageNette or ImageWoof)'
+        elif num_classes == 1000:
+            # Full ImageNet-1K
+            train_samples = 1281167
+            test_samples = 50000
+            description = '1000-class ImageNet-1K dataset (ILSVRC2012)'
+        else:
+            # Custom subset
+            train_samples = -1  # Unknown
+            test_samples = -1
+            description = f'{num_classes}-class ImageNet subset'
+
         return {
             'name': 'ImageNet',
-            'num_classes': 1000,  # Full ImageNet-1K (will be auto-detected at runtime)
+            'num_classes': num_classes,
             'image_size': cls.IMAGE_SIZE,
             'mean': cls.MEAN,
             'std': cls.STD,
-            'train_samples': 1281167,  # Full ImageNet-1K
-            'test_samples': 50000,     # Full ImageNet-1K
-            'description': 'Large-scale image classification dataset (supports full ImageNet-1K and subsets like ImageNette)'
+            'train_samples': train_samples,
+            'test_samples': test_samples,
+            'description': description
         }

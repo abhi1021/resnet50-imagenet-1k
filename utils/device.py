@@ -55,7 +55,6 @@ def get_device(preferred_device=None):
         device = torch.device('mps')
         print(f"✓ Apple MPS (Metal Performance Shaders) is available")
         print(f"✓ Using device: {device}")
-        print(f"  Note: MPS has limited memory. AMP will be auto-disabled to prevent OOM errors.")
 
     # Fallback to CPU
     else:

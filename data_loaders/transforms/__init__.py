@@ -5,16 +5,12 @@ from .augmentations import (
     AlbumentationsTransforms,
     TestTransformWrapper,
     get_cifar_transforms,
-    ImageNetTransforms,
-    get_imagenet_transforms,
-    mixup_data
+    get_imagenet_transforms
 )
 
 __all__ = [
     'AlbumentationsTransforms',
     'TestTransformWrapper',
     'get_cifar_transforms',
-    'ImageNetTransforms',
-    'get_imagenet_transforms',
-    'mixup_data'
+    'get_imagenet_transforms'
 ]

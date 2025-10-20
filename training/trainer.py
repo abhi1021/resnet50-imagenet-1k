@@ -67,23 +67,8 @@ class Trainer:
         self.model_name = model_name
         self.config = config or {}
 
-        # Mixed precision scaler - device-aware initialization
-        # MPS AMP support is experimental and can cause memory issues
-        if self.use_amp:
-            if self.device.type == 'mps':
-                print("⚠ Warning: AMP on MPS can cause memory issues. Consider using --no-amp flag.")
-                print("  Disabling AMP for MPS device to prevent memory leaks.")
-                self.use_amp = False
-                self.scaler = None
-            elif self.device.type == 'cuda':
-                from torch.amp import GradScaler as AmpGradScaler
-                self.scaler = AmpGradScaler('cuda')
-            else:
-                # CPU doesn't benefit from AMP
-                self.use_amp = False
-                self.scaler = None
-        else:
-            self.scaler = None
+        # Mixed precision scaler
+        self.scaler = GradScaler() if self.use_amp else None
 
     def mixup_data(self, x, y, alpha=0.2):
         """Apply MixUp data augmentation."""
@@ -115,22 +100,9 @@ class Trainer:
         processed = 0
         epoch_loss = 0
 
-        # Log initial MPS memory if available
-        if self.device.type == 'mps' and epoch == 1:
-            try:
-                allocated = torch.mps.current_allocated_memory() / 1024**3
-                print(f"\n  MPS Memory at start: {allocated:.2f} GB allocated")
-            except:
-                pass
-
         for batch_idx, (data, target) in enumerate(pbar):
             data, target = data.to(self.device), target.to(self.device)
-
-            # MPS synchronization for proper memory management
-            if self.device.type == 'mps':
-                torch.mps.synchronize()
-
-            self.optimizer.zero_grad(set_to_none=True)
+            self.optimizer.zero_grad()
 
             # Mixed precision training
             if self.use_amp:
@@ -176,49 +148,24 @@ class Trainer:
             if self.scheduler_type == 'onecycle':
                 self.scheduler.step()
 
-            # Accuracy tracking - extract values before deletion
+            # Accuracy tracking
             _, pred = outputs.max(1)
             if self.use_mixup:
                 correct += lam * pred.eq(targets_a).sum().item() + (1 - lam) * pred.eq(targets_b).sum().item()
             else:
                 correct += pred.eq(target).sum().item()
             processed += len(data)
-
-            # Store loss value before deleting tensor
-            loss_val = loss.item()
-            epoch_loss += loss_val
+            epoch_loss += loss.item()
 
             current_lr = self.optimizer.param_groups[0]['lr']
             pbar.set_postfix({
-                'loss': f'{loss_val:.4f}',
+                'loss': f'{loss.item():.4f}',
                 'acc': f'{100*correct/processed:.2f}%',
                 'lr': f'{current_lr:.6f}'
             })
 
-            # Clear MPS cache more frequently to prevent memory accumulation
-            if self.device.type == 'mps':
-                # Delete references to free memory
-                del outputs, loss, pred
-                if self.use_mixup:
-                    del inputs, targets_a, targets_b
-                # Empty cache every 10 batches
-                if (batch_idx + 1) % 10 == 0:
-                    torch.mps.empty_cache()
-
         avg_loss = epoch_loss / len(self.train_loader)
         accuracy = 100. * correct / processed
-
-        # Clear cache after epoch for MPS and log memory usage
-        if self.device.type == 'mps':
-            try:
-                allocated_before = torch.mps.current_allocated_memory() / 1024**3
-                torch.mps.empty_cache()
-                allocated_after = torch.mps.current_allocated_memory() / 1024**3
-                if epoch == 1:
-                    print(f"\n  MPS Memory: {allocated_before:.2f} GB → {allocated_after:.2f} GB (after cache clear)")
-            except:
-                torch.mps.empty_cache()
-
         return avg_loss, accuracy
 
     def test(self):
@@ -228,10 +175,6 @@ class Trainer:
         Returns:
             tuple: (test_loss, accuracy)
         """
-        # Clear MPS cache before testing
-        if self.device.type == 'mps':
-            torch.mps.empty_cache()
-
         self.model.eval()
         test_loss = 0
         correct = 0

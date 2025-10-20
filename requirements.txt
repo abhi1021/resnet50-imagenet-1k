@@ -1,5 +1,6 @@
 torch>=2.0.0
 torchvision>=0.15.0
+torchsummary>=0.1.5
 torchinfo>=1.8.0
 tqdm>=4.65.0
 matplotlib>=3.7.0

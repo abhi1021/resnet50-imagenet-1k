@@ -4,7 +4,6 @@ Albumentations-based data augmentation transforms.
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import numpy as np
-import torch
 
 
 class AlbumentationsTransforms:
@@ -126,60 +125,46 @@ def get_cifar_transforms(mean, std, train=True, augmentation='strong'):
 
 class ImageNetTransforms:
     """
-    ImageNet transformations using Albumentations.
-    Follows standard ImageNet training protocol.
+    Training phase transformations for ImageNet with Albumentations.
+    Supports different augmentation strengths for 224x224 images.
     """
 
-    def __init__(self, mean, std, train=True, augmentation='strong'):
+    def __init__(self, mean, std, augmentation='strong'):
         """
-        Initialize ImageNet transforms.
+        Initialize augmentation pipeline for ImageNet.
 
         Args:
             mean: Tuple of mean values for normalization
             std: Tuple of std values for normalization
-            train: Whether to use train or val transforms
             augmentation: Augmentation strength ('none', 'weak', 'strong')
         """
         self.mean = mean
         self.std = std
-        self.train = train
         self.augmentation = augmentation
         self.aug = self._build_pipeline()
 
     def _build_pipeline(self):
-        """Build augmentation pipeline for ImageNet."""
+        """Build augmentation pipeline based on strength."""
         transforms = []
 
-        if self.train:
-            # Training transforms
-            transforms.append(A.RandomResizedCrop(size=(224, 224), scale=(0.08, 1.0), p=1.0))
-            transforms.append(A.HorizontalFlip(p=0.5))
-
-            if self.augmentation == 'strong':
-                # Strong augmentation: add color jitter
-                transforms.extend([
-                    A.ColorJitter(
-                        brightness=0.4,
-                        contrast=0.4,
-                        saturation=0.4,
-                        hue=0.1,
-                        p=0.8
-                    ),
-                ])
-            elif self.augmentation == 'weak':
-                # Weak augmentation: lighter color jitter
-                transforms.extend([
-                    A.ColorJitter(
-                        brightness=0.2,
-                        contrast=0.2,
-                        saturation=0.2,
-                        hue=0.05,
-                        p=0.5
-                    ),
-                ])
-            # 'none' augmentation: only RandomResizedCrop and HorizontalFlip
-        else:
-            # Validation/test transforms
+        if self.augmentation == 'strong':
+            transforms.extend([
+                A.RandomResizedCrop(size=(224, 224), scale=(0.08, 1.0), ratio=(0.75, 1.333), p=1.0),
+                A.HorizontalFlip(p=0.5),
+                A.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1, p=0.8),
+                A.Affine(
+                    rotate=(-15, 15),
+                    p=0.3
+                ),
+                A.GaussianBlur(blur_limit=(3, 7), p=0.1),
+            ])
+        elif self.augmentation == 'weak':
+            transforms.extend([
+                A.Resize(height=256, width=256),
+                A.CenterCrop(height=224, width=224),
+                A.HorizontalFlip(p=0.5),
+            ])
+        else:  # 'none' augmentation
             transforms.extend([
                 A.Resize(height=256, width=256),
                 A.CenterCrop(height=224, width=224),
@@ -199,58 +184,44 @@ class ImageNetTransforms:
         return self.aug(image=image)["image"]
 
 
+class ImageNetTestTransform:
+    """Test phase transformations for ImageNet (no augmentation, only preprocessing)."""
+
+    def __init__(self, mean, std):
+        """
+        Initialize test transforms for ImageNet.
+
+        Args:
+            mean: Tuple of mean values for normalization
+            std: Tuple of std values for normalization
+        """
+        self.aug = A.Compose([
+            A.Resize(height=256, width=256),
+            A.CenterCrop(height=224, width=224),
+            A.Normalize(mean=mean, std=std),
+            ToTensorV2()
+        ])
+
+    def __call__(self, img):
+        """Apply test transforms to image."""
+        img = np.array(img)
+        return self.aug(image=img)["image"]
+
+
 def get_imagenet_transforms(mean, std, train=True, augmentation='strong'):
     """
-    Get ImageNet transforms based on train/val mode.
+    Get ImageNet transforms based on train/test mode.
 
     Args:
         mean: Tuple of mean values for normalization
         std: Tuple of std values for normalization
-        train: Whether to get train or val transforms
+        train: Whether to get train or test transforms
         augmentation: Augmentation strength for training ('none', 'weak', 'strong')
 
     Returns:
         Callable transform object
-
-    Note:
-        Training transforms follow standard ImageNet protocol:
-        - RandomResizedCrop to 224x224
-        - RandomHorizontalFlip
-        - ColorJitter (if augmentation is 'weak' or 'strong')
-
-        Validation/test transforms:
-        - Resize to 256x256
-        - CenterCrop to 224x224
     """
-    return ImageNetTransforms(mean, std, train, augmentation)
-
-
-def mixup_data(x, y, alpha=0.2, device=None):
-    """
-    Apply MixUp augmentation to inputs and targets.
-
-    Args:
-        x: Input batch
-        y: Target batch
-        alpha: MixUp interpolation strength
-        device: Device to use (torch.device or str). If None, uses x's device.
-
-    Returns:
-        tuple: (mixed_x, y_a, y_b, lambda) where lambda is the mixing coefficient
-    """
-    if alpha > 0:
-        lam = np.random.beta(alpha, alpha)
+    if train:
+        return ImageNetTransforms(mean, std, augmentation)
     else:
-        lam = 1.0
-
-    batch_size = x.size(0)
-
-    # Use input tensor's device if not specified
-    if device is None:
-        device = x.device
-
-    index = torch.randperm(batch_size).to(device)
-
-    mixed_x = lam * x + (1 - lam) * x[index, :]
-    y_a, y_b = y, y[index]
-    return mixed_x, y_a, y_b, lam
+        return ImageNetTestTransform(mean, std)

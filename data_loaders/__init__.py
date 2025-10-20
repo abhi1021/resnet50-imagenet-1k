@@ -40,12 +40,13 @@ def get_dataset(name, train=True, data_dir='../data', augmentation='strong', **k
     return dataset_class(train=train, data_dir=data_dir, augmentation=augmentation, **kwargs)
 
 
-def get_dataset_info(name):
+def get_dataset_info(name, num_classes=None):
     """
     Get metadata about a dataset without loading it.
 
     Args:
         name: Dataset name
+        num_classes: Optional number of classes for datasets that support it (e.g., ImageNet subsets)
 
     Returns:
         dict: Dataset metadata (num_classes, image_size, mean, std, etc.)
@@ -56,7 +57,12 @@ def get_dataset_info(name):
         raise ValueError(f"Unknown dataset '{name}'. Available: {available}")
 
     dataset_class = DATASETS[name]
-    return dataset_class.get_info()
+
+    # Check if the dataset's get_info method accepts num_classes
+    if num_classes is not None and name == 'imagenet':
+        return dataset_class.get_info(num_classes=num_classes)
+    else:
+        return dataset_class.get_info()
 
 
 __all__ = ['get_dataset', 'get_dataset_info', 'CIFAR100Dataset', 'ImageNetDataset']
