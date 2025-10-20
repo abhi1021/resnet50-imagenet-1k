@@ -429,8 +429,10 @@ python train.py \
 ```
 .
 ├── data.py              # ImageNet dataset loading and transforms
-├── model.py             # Model architectures (ResNet variants)
 ├── train.py             # Training script with ImageClassificationTrainer
+├── models/              # Model architectures (ResNet variants)
+├── training/            # Training components (optimizer, scheduler, trainer)
+├── data_loaders/        # Data loaders and augmentations
 ├── requirements.txt     # Python dependencies
 ├── checkpoints/         # Saved model checkpoints (auto-created)
 │   ├── best_model.pth
@@ -531,13 +533,13 @@ checkpoint = {
 
 ```python
 import torch
-from model import ResNet50
+from models import get_model
 
 # Load checkpoint
 checkpoint = torch.load('checkpoints/best_model.pth')
 
 # Create model
-model = ResNet50(num_classes=1000)
+model = get_model('resnet50', num_classes=1000)
 model.load_state_dict(checkpoint['model_state_dict'])
 model.eval()
 

@@ -31,10 +31,9 @@ elif not TORCHSUMMARY_AVAILABLE:
 from data import get_imagenet_loaders
 
 # Import model utilities
-from model import (
-    get_model, get_optimizer, get_scheduler,
-    mixup_data, WarmupScheduler
-)
+from models import get_model
+from training import get_optimizer, get_scheduler, WarmupScheduler
+from data_loaders.transforms import mixup_data
 
 
 def get_device():
@@ -208,16 +207,16 @@ class ImageClassificationTrainer:
 
         # Setup optimizer and scheduler
         self.optimizer = get_optimizer(
-            self.model,
-            model_name=model_name,
+            name='sgd',
+            model=self.model,
             lr=initial_lr,
             weight_decay=weight_decay
         )
 
         self.scheduler = get_scheduler(
-            self.optimizer,
-            self.train_loader,
-            scheduler_type=scheduler_type,
+            name=scheduler_type,
+            optimizer=self.optimizer,
+            train_loader=self.train_loader,
             epochs=epochs
         )
 
@@ -754,7 +753,7 @@ if __name__ == "__main__":
                         choices=['imagenet'],
                         help='Dataset to train on (default: imagenet)')
     parser.add_argument('--model', type=str, default='resnet50',
-                        choices=['resnet18', 'resnet34', 'resnet50', 'wideresnet', 'net'],
+                        choices=['resnet18', 'resnet34', 'resnet50', 'resnet50-pytorch', 'wideresnet', 'net'],
                         help='Model architecture (default: resnet50)')
     parser.add_argument('--epochs', type=int, default=100,
                         help='Number of training epochs (default: 100)')
