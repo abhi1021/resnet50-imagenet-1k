@@ -8,7 +8,10 @@ Example usage:
 import argparse
 import json
 import os
+import torch
 import torch.utils.data
+import matplotlib.pyplot as plt
+import numpy as np
 
 from data_loaders import get_dataset, get_dataset_info
 from models import get_model
@@ -30,6 +33,95 @@ def load_config_file(config_path='./config.json'):
     except Exception as e:
         print(f"⚠ Error loading config: {e}")
         return {}
+
+
+def visualize_batch(data_loader, dataset, dataset_name, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+    """
+    Visualize a batch of images from the dataset.
+
+    Args:
+        data_loader: DataLoader to get batch from
+        dataset: Dataset object (used to get class names if available)
+        dataset_name: Name of the dataset
+        mean: Mean values used for normalization
+        std: Std values used for normalization
+    """
+    print("\n" + "="*70)
+    print("VISUALIZING SAMPLE IMAGES")
+    print("="*70)
+
+    # Get a batch of data
+    batch_data, batch_labels = next(iter(data_loader))
+
+    # Get class names if available
+    class_names = None
+    if hasattr(dataset, 'class_names'):
+        class_names = dataset.class_names
+    elif hasattr(dataset, 'dataset') and hasattr(dataset.dataset, 'classes'):
+        class_names = dataset.dataset.classes
+
+    # Create figure with subplots (3x4 grid)
+    fig, axes = plt.subplots(nrows=3, ncols=4, figsize=(12, 9))
+    fig.suptitle(f'Sample Images from {dataset_name} Training Batch', fontsize=16, y=0.995)
+
+    # Flatten axes array for easier iteration
+    axes = axes.flatten()
+
+    # Convert mean and std to numpy arrays for denormalization
+    mean = np.array(mean)
+    std = np.array(std)
+
+    # Plot each image (up to 12)
+    num_images = min(12, len(batch_data))
+    for idx in range(num_images):
+        img = batch_data[idx].clone()  # Clone to avoid modifying original
+
+        # Denormalize the image
+        # img = img * std + mean (for each channel)
+        if img.shape[0] == 1:
+            # Grayscale image
+            img = img.squeeze(0).numpy()
+            axes[idx].imshow(img, cmap='gray')
+        else:
+            # RGB image: convert from CHW to HWC format
+            img = img.permute(1, 2, 0).numpy()  # Shape: [H, W, 3]
+
+            # Denormalize
+            img = img * std + mean
+
+            # Clip values to [0, 1] range
+            img = np.clip(img, 0, 1)
+
+            axes[idx].imshow(img)
+
+        # Set title with class name
+        label = batch_labels[idx].item()
+        if class_names is not None and label < len(class_names):
+            class_name = class_names[label]
+            axes[idx].set_title(f'{class_name}', fontsize=9, pad=5)
+        else:
+            axes[idx].set_title(f'Class {label}', fontsize=9, pad=5)
+
+        # Remove axis ticks
+        axes[idx].set_xticks([])
+        axes[idx].set_yticks([])
+
+        # Add thin border around images
+        for spine in axes[idx].spines.values():
+            spine.set_edgecolor('lightgray')
+            spine.set_linewidth(0.5)
+
+    # Adjust layout to prevent overlap
+    plt.tight_layout()
+
+    # Save the figure
+    output_path = f'sample_images_{dataset_name}.png'
+    plt.savefig(output_path, dpi=100, bbox_inches='tight')
+    print(f"✓ Sample images saved to: {output_path}")
+
+    # Display the figure
+    plt.show()
+    print("="*70 + "\n")
 
 
 def main():
@@ -102,6 +194,10 @@ def main():
     # Checkpoint management
     parser.add_argument('--keep-last-n-checkpoints', type=int, default=5,
                        help='Number of recent epoch checkpoints to keep (default: 5, -1=all, 0=only breakpoints)')
+
+    # Visualization
+    parser.add_argument('--visualize-samples', action='store_true',
+                       help='Visualize sample images from the dataset before training')
 
     args = parser.parse_args()
 
@@ -272,6 +368,16 @@ def main():
     )
     print(f"✓ Train batches: {len(train_loader)}")
     print(f"✓ Test batches: {len(test_loader)}\n")
+
+    # Visualize samples if requested
+    if args.visualize_samples:
+        visualize_batch(
+            train_loader,
+            train_dataset,
+            dataset_info['name'],
+            mean=dataset_info['mean'],
+            std=dataset_info['std']
+        )
 
     # Create model
     print(f"Creating model: {args.model}")

@@ -3,11 +3,13 @@ Dataset factory and registry for managing different datasets.
 """
 from .cifar100 import CIFAR100Dataset
 from .imagenet import ImageNetDataset
+from .imagenet_hf import ImageNet1KDataset
 
 # Dataset registry
 DATASETS = {
     'cifar100': CIFAR100Dataset,
     'imagenet': ImageNetDataset,
+    'imagenet-1k': ImageNet1KDataset,
     # Future datasets can be added here
     # 'cifar10': CIFAR10Dataset,
 }
@@ -59,10 +61,10 @@ def get_dataset_info(name, num_classes=None):
     dataset_class = DATASETS[name]
 
     # Check if the dataset's get_info method accepts num_classes
-    if num_classes is not None and name == 'imagenet':
+    if num_classes is not None and name in ['imagenet', 'imagenet-1k']:
         return dataset_class.get_info(num_classes=num_classes)
     else:
         return dataset_class.get_info()
 
 
-__all__ = ['get_dataset', 'get_dataset_info', 'CIFAR100Dataset', 'ImageNetDataset']
+__all__ = ['get_dataset', 'get_dataset_info', 'CIFAR100Dataset', 'ImageNetDataset', 'ImageNet1KDataset']
