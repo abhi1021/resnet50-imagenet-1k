@@ -196,15 +196,76 @@ class Trainer:
         )
         return test_loss, acc
 
-    def run(self, epochs, patience=15, checkpoint_epochs=None, target_accuracy=None):
+    def resume_from_checkpoint(self, checkpoint_path):
+        """
+        Resume training from a checkpoint.
+
+        Args:
+            checkpoint_path: Path to checkpoint file
+
+        Returns:
+            int: Epoch to start training from (checkpoint epoch + 1)
+        """
+        checkpoint = self.checkpoint_manager.load_training_state(checkpoint_path)
+
+        # Restore model state
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        print("✓ Restored model state")
+
+        # Restore optimizer state
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        print("✓ Restored optimizer state")
+
+        # Restore scheduler state
+        if checkpoint.get('scheduler_state_dict') and self.scheduler:
+            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            print("✓ Restored scheduler state")
+
+        # Restore GradScaler state for AMP
+        if checkpoint.get('scaler_state_dict') and self.scaler:
+            self.scaler.load_state_dict(checkpoint['scaler_state_dict'])
+            print("✓ Restored GradScaler state")
+
+        # Restore MetricsTracker state
+        if checkpoint.get('metrics_tracker'):
+            mt = checkpoint['metrics_tracker']
+            self.metrics_tracker.train_losses = mt['train_losses']
+            self.metrics_tracker.train_accuracies = mt['train_accuracies']
+            self.metrics_tracker.test_losses = mt['test_losses']
+            self.metrics_tracker.test_accuracies = mt['test_accuracies']
+            self.metrics_tracker.learning_rates = mt['learning_rates']
+            self.metrics_tracker.best_test_acc = mt['best_test_acc']
+            self.metrics_tracker.best_epoch = mt['best_epoch']
+            print(f"✓ Restored metrics history ({len(mt['train_losses'])} epochs)")
+
+        # Restore RNG states for reproducibility
+        if checkpoint.get('rng_state'):
+            rng = checkpoint['rng_state']
+            torch.set_rng_state(rng['torch'])
+            np.random.set_state(rng['numpy'])
+            if 'cuda' in rng and torch.cuda.is_available():
+                torch.cuda.set_rng_state_all(rng['cuda'])
+            print("✓ Restored RNG states")
+
+        start_epoch = checkpoint['epoch'] + 1
+        print(f"\n{'='*70}")
+        print(f"RESUMING TRAINING FROM EPOCH {start_epoch}")
+        print(f"{'='*70}")
+        print(f"Previous best accuracy: {self.metrics_tracker.best_test_acc:.2f}% (epoch {self.metrics_tracker.best_epoch})")
+        print(f"{'='*70}\n")
+
+        return start_epoch
+
+    def run(self, epochs, patience=15, checkpoint_epochs=None, target_accuracy=None, start_epoch=1):
         """
         Run the complete training loop.
 
         Args:
-            epochs: Number of epochs to train
+            epochs: Total number of epochs to train
             patience: Early stopping patience
             checkpoint_epochs: List of epochs to save checkpoints
             target_accuracy: Target accuracy to stop training
+            start_epoch: Epoch to start from (default: 1, >1 when resuming)
 
         Returns:
             float: Best test accuracy achieved
@@ -212,7 +273,7 @@ class Trainer:
         checkpoint_epochs = checkpoint_epochs or [10, 20, 25, 30, 40, 50, 60, 75, 90]
         patience_counter = 0
 
-        for epoch in range(1, epochs + 1):
+        for epoch in range(start_epoch, epochs + 1):
             train_loss, train_acc = self.train_epoch(epoch)
             test_loss, test_acc = self.test()
 
@@ -253,8 +314,10 @@ class Trainer:
                     'train_loss': train_loss,
                     'test_loss': test_loss
                 }
-                self.checkpoint_manager.save_checkpoint(
-                    self.model, self.optimizer, epoch, metrics, self.config
+                # Save full training state for resumption
+                self.checkpoint_manager.save_training_state(
+                    self.model, self.optimizer, self.scheduler, epoch, metrics,
+                    self.config, self.metrics_tracker, self.scaler
                 )
 
             # Early stopping
