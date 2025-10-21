@@ -129,6 +129,17 @@ class CheckpointManager:
         """Get the current checkpoint directory path."""
         return self.checkpoint_dir
 
+    def set_checkpoint_dir(self, checkpoint_dir):
+        """
+        Override the checkpoint directory path.
+
+        Args:
+            checkpoint_dir: Path to use for checkpoints
+        """
+        self.checkpoint_dir = checkpoint_dir
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        print(f"📁 Using checkpoint folder: {self.checkpoint_dir}")
+
     def list_checkpoints(self):
         """
         List all checkpoint files in the checkpoint directory.
