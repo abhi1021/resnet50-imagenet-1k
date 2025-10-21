@@ -92,6 +92,84 @@ class HuggingFaceUploader:
         print("="*70 + "\n")
 
 
+def get_dataset_metadata(dataset_name, num_classes=None):
+    """
+    Get dataset-specific metadata for model card generation.
+
+    Args:
+        dataset_name: Name of the dataset
+        num_classes: Number of classes (optional, for datasets that support it)
+
+    Returns:
+        dict: Dataset metadata
+    """
+    dataset_name = dataset_name.lower()
+
+    if dataset_name == 'cifar100':
+        return {
+            'tag': 'cifar100',
+            'display_name': 'CIFAR-100',
+            'description': 'CIFAR-100 dataset',
+            'num_classes': 100,
+            'image_size': '32×32',
+            'train_samples': 50000,
+            'test_samples': 10000,
+            'mean': '(0.5071, 0.4865, 0.4409)',
+            'std': '(0.2673, 0.2564, 0.2761)'
+        }
+    elif dataset_name == 'cifar10':
+        return {
+            'tag': 'cifar10',
+            'display_name': 'CIFAR-10',
+            'description': 'CIFAR-10 dataset',
+            'num_classes': 10,
+            'image_size': '32×32',
+            'train_samples': 50000,
+            'test_samples': 10000,
+            'mean': '(0.4914, 0.4822, 0.4465)',
+            'std': '(0.2470, 0.2435, 0.2616)'
+        }
+    elif dataset_name in ['imagenet', 'imagenette']:
+        # Determine if it's ImageNette (10 classes) or full ImageNet (1000 classes)
+        if num_classes == 10:
+            return {
+                'tag': 'imagenette',
+                'display_name': 'ImageNette',
+                'description': '10-class ImageNet subset (ImageNette)',
+                'num_classes': 10,
+                'image_size': '160×160 or 224×224',
+                'train_samples': 9469,
+                'test_samples': 3925,
+                'mean': '(0.485, 0.456, 0.406)',
+                'std': '(0.229, 0.224, 0.225)'
+            }
+        else:
+            return {
+                'tag': 'imagenet-1k',
+                'display_name': 'ImageNet-1K',
+                'description': '1000-class ImageNet-1K dataset (ILSVRC2012)',
+                'num_classes': 1000,
+                'image_size': '224×224',
+                'train_samples': 1281167,
+                'test_samples': 50000,
+                'mean': '(0.485, 0.456, 0.406)',
+                'std': '(0.229, 0.224, 0.225)'
+            }
+    else:
+        # Default fallback for unknown datasets
+        return {
+            'tag': dataset_name.replace('_', '-'),
+            'display_name': dataset_name.upper(),
+            'description': f'{dataset_name} dataset',
+            'num_classes': num_classes or 'Unknown',
+            'image_size': 'Unknown',
+            'train_samples': 'Unknown',
+            'test_samples': 'Unknown',
+            'mean': 'Dataset-specific',
+            'std': 'Dataset-specific'
+        }
+
+
 def create_model_card(repo_id, model_name, best_acc, total_epochs, metrics_tracker, config):
     """
     Create a comprehensive model card (README.md) for HuggingFace Hub.
@@ -112,28 +190,39 @@ def create_model_card(repo_id, model_name, best_acc, total_epochs, metrics_track
     train_losses = metrics_tracker.train_losses
     test_losses = metrics_tracker.test_losses
 
+    # Get dataset info from config
+    dataset_name = config.get('dataset', 'cifar100')
+    num_classes = config.get('num_classes')
+
+    # Get dataset metadata
+    dataset_meta = get_dataset_metadata(dataset_name, num_classes)
+
+    # Use actual num_classes from metadata if not in config
+    if num_classes is None:
+        num_classes = dataset_meta['num_classes']
+
     model_card = f"""---
 tags:
 - image-classification
-- cifar100
+- {dataset_meta['tag']}
 - {model_name.lower()}
 - pytorch
 datasets:
-- cifar100
+- {dataset_meta['tag']}
 metrics:
 - accuracy
 ---
 
-# CIFAR-100 {model_name}
+# {dataset_meta['display_name']} {model_name}
 
 ## Model Description
 
-{model_name} trained on CIFAR-100 dataset with advanced augmentation techniques.
+{model_name} trained on {dataset_meta['description']} with advanced augmentation techniques.
 
 ### Model Architecture
 - **Architecture**: {model_name}
-- **Dataset**: CIFAR-100
-- **Classes**: 100
+- **Dataset**: {dataset_meta['display_name']}
+- **Classes**: {dataset_meta['num_classes']}
 
 ### Training Configuration
 - **Batch Size**: {config.get('batch_size', 256)}
@@ -173,16 +262,16 @@ checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
 
 # Load model (you'll need to have the model definition)
 # from models import get_model
-# model = get_model('{model_name.lower()}', num_classes=100)
+# model = get_model('{model_name.lower()}', num_classes={num_classes})
 # model.load_state_dict(checkpoint['model_state_dict'])
 # model.eval()
 ```
 
 ### Training Details
-- **Dataset**: CIFAR-100 (50,000 train, 10,000 test)
-- **Classes**: 100
-- **Image Size**: 32×32
-- **Normalization**: mean=(0.5071, 0.4865, 0.4409), std=(0.2673, 0.2564, 0.2761)
+- **Dataset**: {dataset_meta['display_name']} ({dataset_meta['train_samples']} train, {dataset_meta['test_samples']} test)
+- **Classes**: {dataset_meta['num_classes']}
+- **Image Size**: {dataset_meta['image_size']}
+- **Normalization**: mean={dataset_meta['mean']}, std={dataset_meta['std']}
 
 ### Files
 - `best_model.pth` - Best performing model checkpoint
@@ -196,8 +285,8 @@ MIT
 
 ### Citation
 ```bibtex
-@misc{{{model_name.lower()}-cifar100,
-  title = {{CIFAR-100 {model_name}}},
+@misc{{{model_name.lower()}-{dataset_meta['tag']},
+  title = {{{dataset_meta['display_name']} {model_name}}},
   year = {{2025}},
   publisher = {{HuggingFace}},
   url = {{https://huggingface.co/{repo_id}}}

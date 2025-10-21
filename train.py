@@ -216,6 +216,7 @@ def main():
         'model': args.model,
         'dataset': args.dataset,
         'data_dir': args.data_dir,
+        'num_classes': dataset_info['num_classes'],
         'batch_size': args.batch_size,
         'epochs': args.epochs,
         'optimizer': args.optimizer,
