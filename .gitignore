@@ -28,6 +28,6 @@ logs/
 .DS_Store
 Thumbs.db
 
-checkpoint*
+checkpoint_*/
 backup/
 imagenette2-160*
