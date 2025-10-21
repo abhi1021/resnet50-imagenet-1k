@@ -11,7 +11,7 @@ from datetime import datetime
 class CheckpointManager:
     """Manages model checkpoints with automatic folder creation and versioning."""
 
-    def __init__(self, base_dir='.', checkpoint_prefix='checkpoint', keep_last_n=5):
+    def __init__(self, base_dir='.', checkpoint_prefix='checkpoint', keep_last_n=5, checkpoint_dir=None):
         """
         Initialize checkpoint manager.
 
@@ -20,11 +20,18 @@ class CheckpointManager:
             checkpoint_prefix: Prefix for checkpoint folders
             keep_last_n: Number of recent epoch checkpoints to keep (default: 5)
                         -1 = keep all, 0 = keep only breakpoints
+            checkpoint_dir: Optional specific checkpoint directory to use (overrides automatic creation)
         """
         self.base_dir = base_dir
         self.checkpoint_prefix = checkpoint_prefix
         self.keep_last_n = keep_last_n
-        self.checkpoint_dir = self._get_next_checkpoint_folder()
+
+        # Use provided checkpoint_dir or create new one
+        if checkpoint_dir:
+            self.checkpoint_dir = checkpoint_dir
+        else:
+            self.checkpoint_dir = self._get_next_checkpoint_folder()
+
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         print(f"📁 Checkpoint folder: {self.checkpoint_dir}")
         if keep_last_n == -1:

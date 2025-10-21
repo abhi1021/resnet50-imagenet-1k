@@ -300,11 +300,11 @@ def main():
     print(f"✓ Scheduler: {args.scheduler}\n")
 
     # Create checkpoint manager and metrics tracker
-    checkpoint_manager = CheckpointManager(keep_last_n=args.keep_last_n_checkpoints)
-
-    # If we have a custom checkpoint directory (resume-from path that didn't exist), use it
-    if custom_checkpoint_dir:
-        checkpoint_manager.set_checkpoint_dir(custom_checkpoint_dir)
+    # Pass custom_checkpoint_dir directly to avoid creating unnecessary directories
+    checkpoint_manager = CheckpointManager(
+        keep_last_n=args.keep_last_n_checkpoints,
+        checkpoint_dir=custom_checkpoint_dir
+    )
 
     metrics_tracker = MetricsTracker()
 
