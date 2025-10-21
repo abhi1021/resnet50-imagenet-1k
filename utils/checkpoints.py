@@ -121,7 +121,7 @@ class CheckpointManager:
         if not os.path.exists(checkpoint_path):
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+        checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
         print(f"✓ Loaded checkpoint: {checkpoint_path}")
         return checkpoint
 
@@ -226,7 +226,7 @@ class CheckpointManager:
         if not os.path.exists(checkpoint_path):
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+        checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
         print(f"✓ Loaded training state from: {checkpoint_path}")
         print(f"  Epoch: {checkpoint['epoch']}")
         print(f"  Test Accuracy: {checkpoint['test_accuracy']:.2f}%")

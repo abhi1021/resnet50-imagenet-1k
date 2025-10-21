@@ -125,7 +125,7 @@ def main():
             exit(1)
 
         # Load checkpoint to get saved config
-        checkpoint = torch.load(resume_checkpoint_path, map_location='cpu')
+        checkpoint = torch.load(resume_checkpoint_path, map_location='cpu', weights_only=False)
         resume_config = checkpoint.get('config', {})
 
         # Validate critical parameters
