@@ -88,6 +88,17 @@ python train.py --model resnet50-pytorch --dataset imagenet --data-dir /path/to/
 
 **Note:** Both `--target-accuracy` and `--enable-target-early-stopping` must be specified together. Without these flags, training runs for full epoch count with only patience-based early stopping (15 epochs no improvement).
 
+### Checkpoint Management
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--resume-from` | str | `None` | Resume training from checkpoint directory or file path |
+| `--keep-last-n-checkpoints` | int | `5` | Number of recent epoch checkpoints to keep (-1=all, 0=only breakpoints) |
+
+### Visualization
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--visualize-samples` | flag | `False` | Visualize sample images from dataset before training |
+
 ### HuggingFace Integration
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -229,6 +240,32 @@ python train.py \
   --augmentation none \
   --no-mixup \
   --no-amp
+```
+
+### 11. ImageNet-1K with Resume + LR Finder
+```bash
+# Start fresh training with LR finder (first run)
+python train.py \
+  --model resnet50-pytorch \
+  --dataset imagenet \
+  --data-dir /path/to/imagenet \
+  --epochs 90 \
+  --batch-size 256 \
+  --scheduler onecycle \
+  --lr-finder \
+  --resume-from ./checkpoint_1
+
+# Resume from checkpoint (subsequent runs)
+# Note: LR finder is skipped when resuming - uses saved scheduler state
+python train.py \
+  --model resnet50-pytorch \
+  --dataset imagenet \
+  --data-dir /path/to/imagenet \
+  --epochs 90 \
+  --batch-size 256 \
+  --scheduler onecycle \
+  --lr-finder \
+  --resume-from ./checkpoint_1
 ```
 
 ## Available Models
