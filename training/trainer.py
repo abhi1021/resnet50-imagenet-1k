@@ -221,6 +221,12 @@ class Trainer:
             self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
             print("✓ Restored scheduler state")
 
+            # Verify scheduler state and show current position
+            scheduler_last_epoch = self.scheduler.last_epoch
+            current_lr = self.optimizer.param_groups[0]['lr']
+            print(f"  Scheduler last_epoch: {scheduler_last_epoch} ({self.scheduler_type.upper()} step counter)")
+            print(f"  Current learning rate: {current_lr:.6f}")
+
         # Restore GradScaler state for AMP
         if checkpoint.get('scaler_state_dict') and self.scaler:
             self.scaler.load_state_dict(checkpoint['scaler_state_dict'])
@@ -248,7 +254,24 @@ class Trainer:
             print("✓ Restored RNG states")
 
         start_epoch = checkpoint['epoch'] + 1
+
+        # Display detailed last epoch state information
         print(f"\n{'='*70}")
+        print(f"LAST TRAINING STATE (Epoch {checkpoint['epoch']})")
+        print(f"{'='*70}")
+        print(f"Training:")
+        print(f"  Loss: {checkpoint.get('train_loss', 0.0):.4f}")
+        print(f"  Accuracy: {checkpoint.get('train_accuracy', 0.0):.2f}%")
+        print(f"Test:")
+        print(f"  Loss: {checkpoint.get('test_loss', 0.0):.4f}")
+        print(f"  Accuracy: {checkpoint.get('test_accuracy', 0.0):.2f}%")
+
+        # Get current LR from optimizer (already restored)
+        current_lr = self.optimizer.param_groups[0]['lr']
+        print(f"Learning Rate: {current_lr:.6f}")
+        print(f"{'='*70}\n")
+
+        print(f"{'='*70}")
         print(f"RESUMING TRAINING FROM EPOCH {start_epoch}")
         print(f"{'='*70}")
         print(f"Previous best accuracy: {self.metrics_tracker.best_test_acc:.2f}% (epoch {self.metrics_tracker.best_epoch})")
