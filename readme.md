@@ -242,13 +242,14 @@ python train.py \
   --no-amp
 ```
 
-### 11. ImageNet-1K with Resume + LR Finder
+### 11. ImageNet-1K (HuggingFace) with Resume + LR Finder
 ```bash
 # Start fresh training with LR finder (first run)
+# Loads ImageNet-1K from HuggingFace (ILSVRC/imagenet-1k)
 python train.py \
   --model resnet50-pytorch \
-  --dataset imagenet \
-  --data-dir /path/to/imagenet \
+  --dataset imagenet-1k \
+  --data-dir ./hf_cache \
   --epochs 90 \
   --batch-size 256 \
   --scheduler onecycle \
@@ -259,8 +260,8 @@ python train.py \
 # Note: LR finder is skipped when resuming - uses saved scheduler state
 python train.py \
   --model resnet50-pytorch \
-  --dataset imagenet \
-  --data-dir /path/to/imagenet \
+  --dataset imagenet-1k \
+  --data-dir ./hf_cache \
   --epochs 90 \
   --batch-size 256 \
   --scheduler onecycle \
