@@ -263,7 +263,7 @@ class Trainer:
         Args:
             epochs: Total number of epochs to train
             patience: Early stopping patience
-            checkpoint_epochs: List of epochs to save checkpoints
+            checkpoint_epochs: List of epochs to save as breakpoint checkpoints (kept forever)
             target_accuracy: Target accuracy to stop training
             start_epoch: Epoch to start from (default: 1, >1 when resuming)
 
@@ -305,20 +305,24 @@ class Trainer:
             else:
                 patience_counter += 1
 
-            # Save checkpoint at breakpoints
+            # Save training state at EVERY epoch for resumption
+            metrics = {
+                'train_acc': train_acc,
+                'test_acc': test_acc,
+                'train_loss': train_loss,
+                'test_loss': test_loss
+            }
+            self.checkpoint_manager.save_training_state(
+                self.model, self.optimizer, self.scheduler, epoch, metrics,
+                self.config, self.metrics_tracker, self.scaler
+            )
+
+            # Cleanup old checkpoints (keep rolling window + breakpoints)
+            self.checkpoint_manager.cleanup_old_checkpoints(epoch, checkpoint_epochs)
+
+            # Mark breakpoint epochs
             if epoch in checkpoint_epochs:
-                print(f"📍 Breakpoint checkpoint at epoch {epoch}")
-                metrics = {
-                    'train_acc': train_acc,
-                    'test_acc': test_acc,
-                    'train_loss': train_loss,
-                    'test_loss': test_loss
-                }
-                # Save full training state for resumption
-                self.checkpoint_manager.save_training_state(
-                    self.model, self.optimizer, self.scheduler, epoch, metrics,
-                    self.config, self.metrics_tracker, self.scaler
-                )
+                print(f"📍 Breakpoint checkpoint at epoch {epoch} (will be kept permanently)")
 
             # Early stopping
             if patience_counter >= patience:

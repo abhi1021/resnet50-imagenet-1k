@@ -11,19 +11,28 @@ from datetime import datetime
 class CheckpointManager:
     """Manages model checkpoints with automatic folder creation and versioning."""
 
-    def __init__(self, base_dir='.', checkpoint_prefix='checkpoint'):
+    def __init__(self, base_dir='.', checkpoint_prefix='checkpoint', keep_last_n=5):
         """
         Initialize checkpoint manager.
 
         Args:
             base_dir: Base directory for checkpoints
             checkpoint_prefix: Prefix for checkpoint folders
+            keep_last_n: Number of recent epoch checkpoints to keep (default: 5)
+                        -1 = keep all, 0 = keep only breakpoints
         """
         self.base_dir = base_dir
         self.checkpoint_prefix = checkpoint_prefix
+        self.keep_last_n = keep_last_n
         self.checkpoint_dir = self._get_next_checkpoint_folder()
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         print(f"📁 Checkpoint folder: {self.checkpoint_dir}")
+        if keep_last_n == -1:
+            print(f"   Keep all epoch checkpoints")
+        elif keep_last_n == 0:
+            print(f"   Keep only breakpoint checkpoints")
+        else:
+            print(f"   Keep last {keep_last_n} epoch checkpoints + breakpoints")
 
     def _get_next_checkpoint_folder(self):
         """
@@ -260,3 +269,56 @@ class CheckpointManager:
         print(f"🔍 Found latest checkpoint at epoch {latest_epoch}: {latest_path}")
 
         return latest_path
+
+    def cleanup_old_checkpoints(self, current_epoch, checkpoint_epochs):
+        """
+        Remove old training state checkpoints, keeping only:
+        1. Last N non-breakpoint checkpoints (based on keep_last_n)
+        2. All breakpoint epoch checkpoints (preserved forever)
+
+        Args:
+            current_epoch: Current epoch number
+            checkpoint_epochs: List of breakpoint epochs to preserve
+        """
+        # If keep_last_n is -1, keep all checkpoints
+        if self.keep_last_n == -1:
+            return
+
+        # Get all training state checkpoint files
+        pattern = re.compile(r'^training_state_epoch(\d+)\.pth$')
+        checkpoints = []
+
+        for filename in os.listdir(self.checkpoint_dir):
+            match = pattern.match(filename)
+            if match:
+                epoch_num = int(match.group(1))
+                checkpoints.append((epoch_num, filename))
+
+        if not checkpoints:
+            return
+
+        # Sort by epoch number (descending)
+        checkpoints.sort(key=lambda x: x[0], reverse=True)
+
+        # Separate breakpoint and non-breakpoint checkpoints
+        breakpoint_set = set(checkpoint_epochs)
+        non_breakpoint_checkpoints = []
+
+        for epoch_num, filename in checkpoints:
+            if epoch_num not in breakpoint_set:
+                non_breakpoint_checkpoints.append((epoch_num, filename))
+
+        # Keep only last N non-breakpoint checkpoints
+        if self.keep_last_n == 0:
+            checkpoints_to_delete = non_breakpoint_checkpoints
+        else:
+            checkpoints_to_delete = non_breakpoint_checkpoints[self.keep_last_n:]
+
+        # Delete old checkpoints
+        for epoch_num, filename in checkpoints_to_delete:
+            filepath = os.path.join(self.checkpoint_dir, filename)
+            try:
+                os.remove(filepath)
+                print(f"🗑️  Removed old checkpoint: {filename}")
+            except Exception as e:
+                print(f"⚠️  Could not remove {filename}: {e}")

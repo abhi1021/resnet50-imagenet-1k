@@ -99,6 +99,10 @@ def main():
     parser.add_argument('--resume-from', type=str, default=None,
                        help='Resume training from checkpoint directory or file path')
 
+    # Checkpoint management
+    parser.add_argument('--keep-last-n-checkpoints', type=int, default=5,
+                       help='Number of recent epoch checkpoints to keep (default: 5, -1=all, 0=only breakpoints)')
+
     args = parser.parse_args()
 
     # Handle resume-from: check if it's a directory or file
@@ -286,7 +290,7 @@ def main():
     print(f"✓ Scheduler: {args.scheduler}\n")
 
     # Create checkpoint manager and metrics tracker
-    checkpoint_manager = CheckpointManager()
+    checkpoint_manager = CheckpointManager(keep_last_n=args.keep_last_n_checkpoints)
     metrics_tracker = MetricsTracker()
 
     # Setup HuggingFace uploader if credentials provided
