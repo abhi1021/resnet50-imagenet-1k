@@ -339,8 +339,8 @@ def main():
         config=training_config
     )
 
-    # Run LR Finder if requested
-    if args.lr_finder:
+    # Run LR Finder if requested (skip if resuming from checkpoint)
+    if args.lr_finder and not resume_checkpoint_path:
         lr_finder_config = config_data.get('lr_finder', {
             'num_epochs': 3,
             'start_lr': 1e-6,
@@ -401,6 +401,14 @@ def main():
 
                 training_config['lr_finder'] = {'initial_lr': initial_lr}
                 trainer.config = training_config
+
+    elif args.lr_finder and resume_checkpoint_path:
+        # LR Finder skipped when resuming - scheduler state will be restored from checkpoint
+        print(f"\n{'='*70}")
+        print("ℹ SKIPPING LR FINDER")
+        print(f"{'='*70}")
+        print("Resuming from checkpoint - using saved scheduler state")
+        print(f"{'='*70}\n")
 
     # Resume from checkpoint if specified
     start_epoch = 1
