@@ -296,6 +296,15 @@ class Trainer:
         checkpoint_epochs = checkpoint_epochs or [10, 20, 25, 30, 40, 50, 60, 75, 90]
         patience_counter = 0
 
+        # Save config.json at the start of training (only for epoch 1)
+        if start_epoch == 1:
+            import json
+            checkpoint_dir = self.checkpoint_manager.get_checkpoint_dir()
+            config_path = f"{checkpoint_dir}/config.json"
+            with open(config_path, 'w') as f:
+                json.dump(self.config, f, indent=2)
+            print(f"✓ Saved initial config: {config_path}\n")
+
         for epoch in range(start_epoch, epochs + 1):
             train_loss, train_acc = self.train_epoch(epoch)
             test_loss, test_acc = self.test()
@@ -339,6 +348,16 @@ class Trainer:
                 self.model, self.optimizer, self.scheduler, epoch, metrics,
                 self.config, self.metrics_tracker, self.scaler
             )
+
+            # Save metrics.json after EVERY epoch to ensure it's always up-to-date
+            checkpoint_dir = self.checkpoint_manager.get_checkpoint_dir()
+            metrics_path = f"{checkpoint_dir}/metrics.json"
+            self.metrics_tracker.save(metrics_path)
+
+            # Save training curves after EVERY epoch for visual progress tracking
+            from utils import plot_training_curves
+            curves_path = f"{checkpoint_dir}/training_curves.png"
+            plot_training_curves(self.metrics_tracker, curves_path)
 
             # Cleanup old checkpoints (keep rolling window + breakpoints)
             self.checkpoint_manager.cleanup_old_checkpoints(epoch, checkpoint_epochs)
