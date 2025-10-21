@@ -31,3 +31,6 @@ Thumbs.db
 checkpoint_*/
 backup/
 imagenette2-160*
+/.idea
+*.pem
+erav4.pem
