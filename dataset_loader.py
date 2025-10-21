@@ -1,4 +1,4 @@
-from datasets import load_from_disk, load_dataset
+from datasets import load_dataset
 import torch
 import torch.nn as nn
 from torch.optim import SGD
@@ -6,12 +6,15 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms, models
 import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
+import numpy as np
 
 # 1. Load from disk
 # dataset_path = "/mnt/imagenet/dataset/ILSVRC___imagenet-1k/default/0.0.0/49e2ee26f3810fb5a7536bbf732a7b07389a47b5"
-dataset_path = "/mnt/imagenet/dataset/ILSVRC___imagenet-1k"
+# dataset_path = "/mnt/imagenet/dataset/ILSVRC___imagenet-1k"
 # ds = load_from_disk(dataset_path)
 
+# 1. Load from actual/cache
 ds = load_dataset("ILSVRC/imagenet-1k", cache_dir="/mnt/imagenet/dataset")
 train_ds = ds["train"]
 val_ds = ds["validation"]
@@ -48,9 +51,6 @@ model.fc = nn.Linear(model.fc.in_features, 10)  # Imagenette has 10 classes
 model = model.to(device)
 
 print(f"{device}: Looks ok till now!!!")
-
-import matplotlib.pyplot as plt
-import numpy as np
 
 # Assuming you loaded your dataset like: train_dataset = load_dataset("ILSVRC/imagenet-1k", split="train")
 # Get class names from dataset features

@@ -8,3 +8,4 @@ numpy>=1.24.0
 plotille>=5.0.0
 albumentations>=1.3.0
 huggingface_hub>=0.20.0
+datasets~=4.2.0
