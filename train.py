@@ -215,6 +215,7 @@ def main():
     training_config = {
         'model': args.model,
         'dataset': args.dataset,
+        'data_dir': args.data_dir,
         'batch_size': args.batch_size,
         'epochs': args.epochs,
         'optimizer': args.optimizer,

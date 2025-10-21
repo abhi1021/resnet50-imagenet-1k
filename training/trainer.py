@@ -336,18 +336,46 @@ class Trainer:
         print("="*70)
 
         # Create clean data loader (no mixup, no label smoothing)
-        from data_loaders.transforms import TestTransformWrapper
+        from data_loaders.transforms import TestTransformWrapper, ImageNetTestTransform
         from data_loaders import get_dataset_info
+        import os
 
-        dataset_info = get_dataset_info('cifar100')
-        test_transform = TestTransformWrapper(dataset_info['mean'], dataset_info['std'])
+        # Get dataset type and data directory from config
+        dataset_name = self.config.get('dataset', 'cifar100')
+        data_dir = self.config.get('data_dir', '../data')
 
-        clean_dataset = datasets.CIFAR100(
-            '../data',
-            train=True,
-            download=False,
-            transform=test_transform
-        )
+        dataset_info = get_dataset_info(dataset_name)
+
+        # Use appropriate transform based on dataset type
+        if dataset_name in ['imagenet', 'imagenette']:
+            test_transform = ImageNetTestTransform(dataset_info['mean'], dataset_info['std'])
+        else:
+            test_transform = TestTransformWrapper(dataset_info['mean'], dataset_info['std'])
+
+        # Create dataset based on type
+        if dataset_name in ['imagenet', 'imagenette']:
+            # For ImageNet-style datasets, use ImageFolder
+            train_dir = os.path.join(data_dir, 'train')
+            clean_dataset = datasets.ImageFolder(
+                train_dir,
+                transform=test_transform
+            )
+        elif dataset_name == 'cifar100':
+            clean_dataset = datasets.CIFAR100(
+                data_dir,
+                train=True,
+                download=False,
+                transform=test_transform
+            )
+        elif dataset_name == 'cifar10':
+            clean_dataset = datasets.CIFAR10(
+                data_dir,
+                train=True,
+                download=False,
+                transform=test_transform
+            )
+        else:
+            raise ValueError(f"Unsupported dataset for LR Finder: {dataset_name}")
 
         # Only use pin_memory on CUDA devices
         use_pin_memory = self.device.type == 'cuda'
