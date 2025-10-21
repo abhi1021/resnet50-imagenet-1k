@@ -4,6 +4,7 @@ Checkpoint management for saving and loading model state.
 import os
 import re
 import torch
+import numpy as np
 from datetime import datetime
 
 
@@ -132,3 +133,130 @@ class CheckpointManager:
         checkpoints = [f for f in os.listdir(self.checkpoint_dir)
                       if f.endswith('.pth')]
         return sorted(checkpoints)
+
+    def save_training_state(self, model, optimizer, scheduler, epoch, metrics,
+                           config, metrics_tracker=None, scaler=None, filename=None):
+        """
+        Save complete training state for resumption.
+
+        Args:
+            model: PyTorch model
+            optimizer: PyTorch optimizer
+            scheduler: Learning rate scheduler
+            epoch: Current epoch number
+            metrics: Dict of current metrics (train_acc, test_acc, train_loss, test_loss)
+            config: Training configuration dict
+            metrics_tracker: MetricsTracker instance (optional)
+            scaler: GradScaler instance for AMP (optional)
+            filename: Optional custom filename (default: training_state_epoch{N}.pth)
+
+        Returns:
+            str: Path to saved checkpoint
+        """
+        if filename is None:
+            filename = f'training_state_epoch{epoch}.pth'
+
+        checkpoint_path = os.path.join(self.checkpoint_dir, filename)
+
+        # Save complete training state
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
+            'train_accuracy': metrics.get('train_acc', 0.0),
+            'test_accuracy': metrics.get('test_acc', 0.0),
+            'train_loss': metrics.get('train_loss', 0.0),
+            'test_loss': metrics.get('test_loss', 0.0),
+            'timestamp': datetime.now().isoformat(),
+            'config': config,
+            'rng_state': {
+                'torch': torch.get_rng_state(),
+                'numpy': np.random.get_state(),
+            }
+        }
+
+        # Add CUDA RNG state if available
+        if torch.cuda.is_available():
+            checkpoint['rng_state']['cuda'] = torch.cuda.get_rng_state_all()
+
+        # Add GradScaler state for AMP
+        if scaler is not None:
+            checkpoint['scaler_state_dict'] = scaler.state_dict()
+
+        # Add MetricsTracker state
+        if metrics_tracker is not None:
+            checkpoint['metrics_tracker'] = {
+                'train_losses': metrics_tracker.train_losses,
+                'train_accuracies': metrics_tracker.train_accuracies,
+                'test_losses': metrics_tracker.test_losses,
+                'test_accuracies': metrics_tracker.test_accuracies,
+                'learning_rates': metrics_tracker.learning_rates,
+                'best_test_acc': metrics_tracker.best_test_acc,
+                'best_epoch': metrics_tracker.best_epoch
+            }
+
+        torch.save(checkpoint, checkpoint_path)
+        print(f"💾 Saved training state: {checkpoint_path}")
+
+        return checkpoint_path
+
+    def load_training_state(self, checkpoint_path):
+        """
+        Load complete training state from checkpoint.
+
+        Args:
+            checkpoint_path: Path to checkpoint file
+
+        Returns:
+            dict: Complete checkpoint dictionary
+
+        Raises:
+            FileNotFoundError: If checkpoint file doesn't exist
+        """
+        if not os.path.exists(checkpoint_path):
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+        print(f"✓ Loaded training state from: {checkpoint_path}")
+        print(f"  Epoch: {checkpoint['epoch']}")
+        print(f"  Test Accuracy: {checkpoint['test_accuracy']:.2f}%")
+        print(f"  Timestamp: {checkpoint['timestamp']}")
+
+        return checkpoint
+
+    @staticmethod
+    def find_latest_epoch_checkpoint(checkpoint_dir):
+        """
+        Find the checkpoint with the highest epoch number in a directory.
+
+        Args:
+            checkpoint_dir: Directory to search for checkpoints
+
+        Returns:
+            str: Path to the latest checkpoint, or None if no checkpoints found
+        """
+        if not os.path.exists(checkpoint_dir):
+            return None
+
+        # Pattern to match training_state_epoch{N}.pth
+        pattern = re.compile(r'^training_state_epoch(\d+)\.pth$')
+
+        checkpoints = []
+        for filename in os.listdir(checkpoint_dir):
+            match = pattern.match(filename)
+            if match:
+                epoch_num = int(match.group(1))
+                checkpoints.append((epoch_num, filename))
+
+        if not checkpoints:
+            return None
+
+        # Sort by epoch number and get the latest
+        checkpoints.sort(key=lambda x: x[0], reverse=True)
+        latest_epoch, latest_filename = checkpoints[0]
+
+        latest_path = os.path.join(checkpoint_dir, latest_filename)
+        print(f"🔍 Found latest checkpoint at epoch {latest_epoch}: {latest_path}")
+
+        return latest_path

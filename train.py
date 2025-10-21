@@ -95,7 +95,93 @@ def main():
     parser.add_argument('--hf-repo', type=str, default=None,
                        help='HuggingFace repository ID (e.g., username/repo-name)')
 
+    # Resume training
+    parser.add_argument('--resume-from', type=str, default=None,
+                       help='Resume training from checkpoint directory or file path')
+
     args = parser.parse_args()
+
+    # Handle resume-from: check if it's a directory or file
+    resume_checkpoint_path = None
+    resume_config = None
+    if args.resume_from:
+        if os.path.isdir(args.resume_from):
+            # Directory path - find latest checkpoint
+            resume_checkpoint_path = CheckpointManager.find_latest_epoch_checkpoint(args.resume_from)
+            if not resume_checkpoint_path:
+                print(f"❌ Error: No training state checkpoints found in {args.resume_from}")
+                print(f"   Looking for files matching pattern: training_state_epoch*.pth")
+                exit(1)
+        elif os.path.isfile(args.resume_from):
+            # File path - use directly
+            resume_checkpoint_path = args.resume_from
+            print(f"✓ Using checkpoint: {resume_checkpoint_path}")
+        else:
+            print(f"❌ Error: Resume path does not exist: {args.resume_from}")
+            exit(1)
+
+        # Load checkpoint to get saved config
+        checkpoint = torch.load(resume_checkpoint_path, map_location='cpu')
+        resume_config = checkpoint.get('config', {})
+
+        # Validate critical parameters
+        print(f"\n{'='*70}")
+        print("VALIDATING CHECKPOINT CONFIGURATION")
+        print(f"{'='*70}")
+
+        critical_params = ['model', 'dataset', 'data_dir', 'num_classes', 'batch_size']
+        validation_errors = []
+
+        for param in critical_params:
+            saved_value = resume_config.get(param)
+            current_value = getattr(args, param, None)
+
+            # For num_classes, use saved value if not specified
+            if param == 'num_classes' and current_value is None:
+                args.num_classes = saved_value
+                current_value = saved_value
+
+            if saved_value != current_value:
+                validation_errors.append(
+                    f"  ❌ {param}: saved='{saved_value}', current='{current_value}'"
+                )
+            else:
+                print(f"  ✓ {param}: {saved_value}")
+
+        if validation_errors:
+            print(f"\n{'='*70}")
+            print("CONFIGURATION MISMATCH DETECTED")
+            print(f"{'='*70}")
+            for error in validation_errors:
+                print(error)
+            print(f"\nCannot resume training with mismatched critical parameters.")
+            print(f"Please ensure model, dataset, data_dir, num_classes, and batch_size match.")
+            print(f"{'='*70}\n")
+            exit(1)
+
+        # Override epochs if specified, otherwise use saved value
+        if args.epochs == 100:  # Default value
+            saved_epochs = resume_config.get('epochs', 100)
+            args.epochs = saved_epochs
+            print(f"  ℹ Using saved epochs: {saved_epochs}")
+        else:
+            print(f"  ℹ Extending training to {args.epochs} epochs (saved: {resume_config.get('epochs')})")
+
+        # Warn about other parameter differences
+        warning_params = ['optimizer', 'scheduler', 'augmentation']
+        warnings = []
+        for param in warning_params:
+            saved_value = resume_config.get(param)
+            current_value = getattr(args, param, None)
+            if saved_value and saved_value != current_value:
+                warnings.append(f"  ⚠ {param}: saved='{saved_value}', current='{current_value}'")
+
+        if warnings:
+            print(f"\nParameter differences (may affect training):")
+            for warning in warnings:
+                print(warning)
+
+        print(f"{'='*70}\n")
 
     # Load config file
     config_data = load_config_file(args.config)
@@ -312,9 +398,14 @@ def main():
                 training_config['lr_finder'] = {'initial_lr': initial_lr}
                 trainer.config = training_config
 
+    # Resume from checkpoint if specified
+    start_epoch = 1
+    if resume_checkpoint_path:
+        start_epoch = trainer.resume_from_checkpoint(resume_checkpoint_path)
+
     # Run training
     print("\n" + "="*70)
-    print("STARTING TRAINING")
+    print("STARTING TRAINING" if start_epoch == 1 else f"RESUMING TRAINING FROM EPOCH {start_epoch}")
     print("="*70 + "\n")
 
     # Determine target accuracy for early stopping
@@ -325,7 +416,8 @@ def main():
     best_accuracy = trainer.run(
         epochs=args.epochs,
         patience=15,
-        target_accuracy=target_accuracy
+        target_accuracy=target_accuracy,
+        start_epoch=start_epoch
     )
 
     # Save results
