@@ -25,7 +25,7 @@ class ImageNet1KDataset(BaseDataset):
     NUM_CLASSES = 1000
     IMAGE_SIZE = (224, 224)
 
-    def __init__(self, train=True, data_dir='/mnt/imagenet/dataset', augmentation='strong', num_classes=None):
+    def __init__(self, train=True, data_dir='/mnt/imagenet/dataset', augmentation='strong', num_classes=None, hf_token=None):
         """
         Initialize ImageNet-1K dataset using HuggingFace datasets.
 
@@ -35,6 +35,7 @@ class ImageNet1KDataset(BaseDataset):
             augmentation: Augmentation strength ('none', 'weak', 'strong')
                          Only applies to training data
             num_classes: Number of classes (fixed at 1000 for ImageNet-1K)
+            hf_token: HuggingFace API token for accessing gated datasets
         """
         self.train = train
         self.data_dir = data_dir
@@ -48,7 +49,17 @@ class ImageNet1KDataset(BaseDataset):
 
         # Load HuggingFace dataset with caching
         print(f"Loading ImageNet-1K dataset from HuggingFace (cache: {data_dir})...")
-        ds = load_dataset("ILSVRC/imagenet-1k", cache_dir=data_dir)
+        try:
+            ds = load_dataset("ILSVRC/imagenet-1k", cache_dir=data_dir, token=hf_token)
+        except Exception as e:
+            if "gated dataset" in str(e) or "authentication" in str(e).lower():
+                print(f"\n❌ Error: ImageNet-1K is a gated dataset requiring authentication.")
+                print(f"   Please follow these steps:")
+                print(f"   1. Request access at: https://huggingface.co/datasets/ILSVRC/imagenet-1k")
+                print(f"   2. Get your token at: https://huggingface.co/settings/tokens")
+                print(f"   3. Use --hf-token flag: python train.py ... --hf-token YOUR_TOKEN")
+                print(f"   OR authenticate once: huggingface-cli login\n")
+            raise
 
         # Select appropriate split
         split_name = 'train' if train else 'validation'

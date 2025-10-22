@@ -29,6 +29,7 @@ logs/
 Thumbs.db
 
 checkpoint_*/
+hf_cache/
 backup/
 imagenette2-160*
 /.idea

@@ -456,13 +456,22 @@ class Trainer:
         dataset_info = get_dataset_info(dataset_name)
 
         # Use appropriate transform based on dataset type
-        if dataset_name in ['imagenet', 'imagenette']:
+        if dataset_name in ['imagenet', 'imagenette', 'imagenet-1k']:
             test_transform = ImageNetTestTransform(dataset_info['mean'], dataset_info['std'])
         else:
             test_transform = TestTransformWrapper(dataset_info['mean'], dataset_info['std'])
 
         # Create dataset based on type
-        if dataset_name in ['imagenet', 'imagenette']:
+        if dataset_name == 'imagenet-1k':
+            # For HuggingFace ImageNet-1K, use the custom dataset class
+            from data_loaders.imagenet_hf import ImageNet1KDataset
+            hf_token = self.config.get('hf_token', None)
+            clean_dataset = ImageNet1KDataset(
+                data_dir=data_dir,
+                train=True,
+                hf_token=hf_token
+            )
+        elif dataset_name in ['imagenet', 'imagenette']:
             # For ImageNet-style datasets, use ImageFolder
             train_dir = os.path.join(data_dir, 'train')
             clean_dataset = datasets.ImageFolder(

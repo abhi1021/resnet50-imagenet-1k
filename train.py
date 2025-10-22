@@ -340,14 +340,16 @@ def main():
         train=True,
         data_dir=args.data_dir,
         augmentation=args.augmentation,
-        num_classes=args.num_classes
+        num_classes=args.num_classes,
+        hf_token=args.hf_token
     )
     test_dataset = get_dataset(
         args.dataset,
         train=False,
         data_dir=args.data_dir,
         augmentation='none',
-        num_classes=args.num_classes
+        num_classes=args.num_classes,
+        hf_token=args.hf_token
     )
 
     # Create data loaders

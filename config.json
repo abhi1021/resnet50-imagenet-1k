@@ -1,6 +1,6 @@
 {
   "lr_finder": {
-    "num_epochs": 3,
+    "num_epochs": 2,
     "start_lr": 1e-6,
     "end_lr": 1.0,
     "selection_method": "steepest_gradient"

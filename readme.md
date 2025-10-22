@@ -102,7 +102,7 @@ python train.py --model resnet50-pytorch --dataset imagenet --data-dir /path/to/
 ### HuggingFace Integration
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--hf-token` | str | `None` | HuggingFace API token for model upload |
+| `--hf-token` | str | `None` | HuggingFace API token (required for gated datasets like ImageNet-1K and for model upload) |
 | `--hf-repo` | str | `None` | HuggingFace repository ID (e.g., `username/model-name`) |
 
 ## Example Commands
@@ -244,6 +244,10 @@ python train.py \
 
 ### 11. ImageNet-1K (HuggingFace) with Resume + LR Finder
 ```bash
+# IMPORTANT: ImageNet-1K is a gated dataset requiring authentication
+# First, request access at: https://huggingface.co/datasets/ILSVRC/imagenet-1k
+# Then get your token at: https://huggingface.co/settings/tokens
+
 # Start fresh training with LR finder (first run)
 # Loads ImageNet-1K from HuggingFace (ILSVRC/imagenet-1k)
 python train.py \
@@ -254,7 +258,8 @@ python train.py \
   --batch-size 256 \
   --scheduler onecycle \
   --lr-finder \
-  --resume-from ./checkpoint_1
+  --resume-from ./checkpoint_1 \
+  --hf-token YOUR_HF_TOKEN_HERE
 
 # Resume from checkpoint (subsequent runs)
 # Note: LR finder is skipped when resuming - uses saved scheduler state
@@ -266,7 +271,11 @@ python train.py \
   --batch-size 256 \
   --scheduler onecycle \
   --lr-finder \
-  --resume-from ./checkpoint_1
+  --resume-from ./checkpoint_1 \
+  --hf-token YOUR_HF_TOKEN_HERE
+
+# Alternative: Authenticate once via CLI (no --hf-token needed)
+# huggingface-cli login
 ```
 
 ## Available Models
@@ -286,6 +295,18 @@ Training creates a `checkpoint_N/` directory with:
 - `README.md` - Auto-generated model card
 
 ## Troubleshooting
+
+**HuggingFace Authentication Error (ImageNet-1K):**
+```
+Dataset 'ILSVRC/imagenet-1k' is a gated dataset on the Hub. You must be authenticated to access it.
+```
+**Solution:**
+1. Request access at: https://huggingface.co/datasets/ILSVRC/imagenet-1k
+2. Wait for access approval (usually instant if you have ImageNet license)
+3. Get your token at: https://huggingface.co/settings/tokens
+4. Use the token:
+   - **Option 1:** Pass via CLI: `--hf-token YOUR_TOKEN_HERE`
+   - **Option 2:** Login once: `huggingface-cli login` (then no need for `--hf-token`)
 
 **Out of Memory:**
 - Reduce `--batch-size` (try 128, 64, 32)
