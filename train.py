@@ -12,6 +12,7 @@ import torch
 import torch.utils.data
 import matplotlib.pyplot as plt
 import numpy as np
+from datetime import datetime
 
 from data_loaders import get_dataset, get_dataset_info
 from models import get_model
@@ -211,9 +212,15 @@ def main():
             # Directory path - find latest checkpoint
             resume_checkpoint_path = CheckpointManager.find_latest_epoch_checkpoint(args.resume_from)
             if not resume_checkpoint_path:
-                print(f"❌ Error: No training state checkpoints found in {args.resume_from}")
+                print(f"\n{'='*70}")
+                print(f"⚠️  WARNING: No training state checkpoints found in {args.resume_from}")
+                print(f"{'='*70}")
                 print(f"   Looking for files matching pattern: training_state_epoch*.pth")
-                exit(1)
+                print(f"   This can happen if training was interrupted before first epoch completed.")
+                print(f"   Starting training from scratch, but will use this directory for checkpoints.")
+                print(f"   Directory: {args.resume_from}")
+                print(f"{'='*70}\n")
+                resume_checkpoint_path = None
             # Use the existing directory for future checkpoints
             custom_checkpoint_dir = args.resume_from
         elif os.path.isfile(args.resume_from):
@@ -416,6 +423,32 @@ def main():
 
     metrics_tracker = MetricsTracker()
 
+    # Check if we should load saved LR finder results
+    # This happens when:
+    # 1. --lr-finder flag is set
+    # 2. No checkpoint to resume from (starting fresh or failed during epoch 1)
+    # 3. custom_checkpoint_dir exists (from --resume-from)
+    # 4. lr_finder_results.json exists in that directory
+    saved_lr_finder_results = None
+    if args.lr_finder and not resume_checkpoint_path and custom_checkpoint_dir:
+        lr_finder_path = f"{checkpoint_manager.get_checkpoint_dir()}/lr_finder_results.json"
+        if os.path.exists(lr_finder_path):
+            try:
+                with open(lr_finder_path, 'r') as f:
+                    saved_lr_finder_results = json.load(f)
+                print(f"\n{'='*70}")
+                print(f"✓ Found saved LR finder results from previous run")
+                print(f"{'='*70}")
+                print(f"  File: {lr_finder_path}")
+                print(f"  Timestamp: {saved_lr_finder_results.get('timestamp', 'N/A')}")
+                print(f"  Scheduler: {saved_lr_finder_results.get('scheduler_type', 'N/A')}")
+                print(f"  Will reuse these results instead of re-running LR finder")
+                print(f"{'='*70}\n")
+            except Exception as e:
+                print(f"⚠️  Warning: Could not load LR finder results: {e}")
+                print(f"   Will run LR finder normally\n")
+                saved_lr_finder_results = None
+
     # Setup HuggingFace uploader if credentials provided
     hf_uploader = None
     if args.hf_token and args.hf_repo:
@@ -464,14 +497,25 @@ def main():
 
     # Run LR Finder if requested (skip if resuming from checkpoint)
     if args.lr_finder and not resume_checkpoint_path:
-        lr_finder_config = config_data.get('lr_finder', {
-            'num_epochs': 3,
-            'start_lr': 1e-6,
-            'end_lr': 1.0,
-            'selection_method': 'steepest_gradient'
-        })
+        # Check if we have saved LR finder results to reuse
+        if saved_lr_finder_results:
+            # Reuse saved LR finder results
+            print(f"\n{'='*70}")
+            print(f"REUSING SAVED LR FINDER RESULTS")
+            print(f"{'='*70}")
+            suggested_lrs = saved_lr_finder_results.get('suggested_lrs', {})
+            print(f"  Suggested LRs: {suggested_lrs}")
+            print(f"{'='*70}\n")
+        else:
+            # Run LR finder normally
+            lr_finder_config = config_data.get('lr_finder', {
+                'num_epochs': 3,
+                'start_lr': 1e-6,
+                'end_lr': 1.0,
+                'selection_method': 'steepest_gradient'
+            })
 
-        suggested_lrs = trainer.run_lr_finder(lr_finder_config)
+            suggested_lrs = trainer.run_lr_finder(lr_finder_config)
 
         # Update scheduler with found LRs
         if suggested_lrs and args.scheduler == 'onecycle':
@@ -524,6 +568,20 @@ def main():
 
                 training_config['lr_finder'] = {'initial_lr': initial_lr}
                 trainer.config = training_config
+
+        # Save LR finder results to disk for future resumption (only if we just ran it)
+        if suggested_lrs and not saved_lr_finder_results:
+            lr_finder_results = {
+                'timestamp': datetime.now().isoformat(),
+                'scheduler_type': args.scheduler,
+                'selection_method': lr_finder_config.get('selection_method', 'steepest_gradient'),
+                'suggested_lrs': suggested_lrs,
+                'config_update': training_config.get('lr_finder', {})
+            }
+            lr_finder_path = f"{checkpoint_manager.get_checkpoint_dir()}/lr_finder_results.json"
+            with open(lr_finder_path, 'w') as f:
+                json.dump(lr_finder_results, f, indent=2)
+            print(f"✓ Saved LR finder results: {lr_finder_path}\n")
 
     elif args.lr_finder and resume_checkpoint_path:
         # LR Finder skipped when resuming - scheduler state will be restored from checkpoint

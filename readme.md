@@ -288,13 +288,183 @@ python train.py \
 
 Training creates a `checkpoint_N/` directory with:
 - `best_model.pth` - Best model checkpoint
+- `training_state_epochN.pth` - Full training state for each epoch (for resumption)
 - `metrics.json` - Training history
 - `training_curves.png` - Loss/accuracy plots
 - `lr_finder_plot.png` - LR Finder results (if `--lr-finder` used)
+- `lr_finder_results.json` - Saved LR finder results (automatically reused on resume)
 - `config.json` - Training configuration
 - `README.md` - Auto-generated model card
 
+## Resume Training
+
+The framework supports robust checkpoint resumption with automatic LR finder result reuse.
+
+### Basic Resume Usage
+
+```bash
+# Resume from a checkpoint directory (automatically finds latest epoch)
+python train.py \
+  --model resnet50-pytorch \
+  --dataset imagenet-1k \
+  --data-dir ./hf_cache \
+  --epochs 90 \
+  --batch-size 256 \
+  --scheduler onecycle \
+  --resume-from ./checkpoint_1 \
+  --hf-token YOUR_TOKEN
+
+# Resume from a specific checkpoint file
+python train.py \
+  --model resnet50-pytorch \
+  --dataset imagenet-1k \
+  --data-dir ./hf_cache \
+  --epochs 90 \
+  --batch-size 256 \
+  --scheduler onecycle \
+  --resume-from ./checkpoint_1/training_state_epoch5.pth \
+  --hf-token YOUR_TOKEN
+```
+
+### Handling Training Interruptions
+
+**Scenario 1: Training interrupted during epoch 1 (before first checkpoint saved)**
+
+If training is interrupted during epoch 1, no `training_state_epoch1.pth` exists yet. The framework handles this gracefully:
+
+```bash
+# First run - gets interrupted during epoch 1
+python train.py \
+  --model resnet50-pytorch \
+  --dataset imagenet-1k \
+  --data-dir ./hf_cache \
+  --epochs 90 \
+  --batch-size 256 \
+  --scheduler onecycle \
+  --lr-finder \
+  --resume-from ./checkpoint_1 \
+  --hf-token YOUR_TOKEN
+
+# Training runs LR finder, saves results to lr_finder_results.json
+# Training starts epoch 1 but gets interrupted
+# NO training_state_epoch1.pth created yet
+
+# Resume - automatically handles missing checkpoint
+python train.py \
+  --model resnet50-pytorch \
+  --dataset imagenet-1k \
+  --data-dir ./hf_cache \
+  --epochs 90 \
+  --batch-size 256 \
+  --scheduler onecycle \
+  --lr-finder \
+  --resume-from ./checkpoint_1 \
+  --hf-token YOUR_TOKEN
+
+# Output:
+# ⚠️  WARNING: No training state checkpoints found in ./checkpoint_1
+#    Starting training from scratch, but will use this directory for checkpoints.
+# ✓ Found saved LR finder results from previous run
+#    Will reuse these results instead of re-running LR finder
+```
+
+**What happens:**
+1. Shows warning about missing checkpoints (expected behavior)
+2. Starts training from epoch 1 (fresh start)
+3. **Automatically loads and reuses saved LR finder results** from `lr_finder_results.json`
+4. Skips re-running expensive LR range test
+5. Applies saved learning rates to scheduler
+6. Continues training normally
+
+**Scenario 2: Normal resume from completed epoch**
+
+```bash
+# Resume from epoch 5 (training_state_epoch5.pth exists)
+python train.py \
+  --model resnet50-pytorch \
+  --dataset imagenet-1k \
+  --data-dir ./hf_cache \
+  --epochs 90 \
+  --batch-size 256 \
+  --scheduler onecycle \
+  --lr-finder \
+  --resume-from ./checkpoint_1 \
+  --hf-token YOUR_TOKEN
+
+# Output:
+# 🔍 Found latest checkpoint at epoch 5: ./checkpoint_1/training_state_epoch5.pth
+# ✓ Loaded training state from: ./checkpoint_1/training_state_epoch5.pth
+# ✓ Restored model state
+# ✓ Restored optimizer state
+# ✓ Restored scheduler state
+# ℹ SKIPPING LR FINDER
+#    Resuming from checkpoint - using saved scheduler state
+# RESUMING TRAINING FROM EPOCH 6
+```
+
+**What happens:**
+1. Finds and loads latest checkpoint (`training_state_epoch5.pth`)
+2. Restores complete training state (model, optimizer, scheduler, metrics, RNG)
+3. Skips LR finder (scheduler already has correct learning rates from checkpoint)
+4. Continues training from epoch 6
+
+### LR Finder State Persistence
+
+When `--lr-finder` is used, results are automatically saved to `lr_finder_results.json`:
+
+```json
+{
+  "timestamp": "2025-01-15T10:30:00",
+  "scheduler_type": "onecycle",
+  "selection_method": "steepest_gradient",
+  "suggested_lrs": {
+    "max_lr": 0.123456,
+    "base_lr": 0.012345
+  },
+  "config_update": {
+    "max_lr": 0.123456,
+    "base_lr": 0.012345,
+    "div_factor": 10.0
+  }
+}
+```
+
+**Benefits:**
+- No need to re-run expensive LR range test on resume
+- Consistent learning rates across training interruptions
+- Results saved even if training crashes during epoch 1
+
+### Resume Best Practices
+
+1. **Always use the same critical parameters** when resuming:
+   - `--model`, `--dataset`, `--data-dir`, `--num-classes`, `--batch-size`
+   - The script validates these and will error if they don't match
+
+2. **Checkpoint cleanup** is automatic:
+   - Keeps last N epoch checkpoints (default: 5, configurable via `--keep-last-n-checkpoints`)
+   - Breakpoint epochs (10, 20, 25, 30, 40, 50, 60, 75, 90) are kept forever
+   - Best model checkpoint is always preserved
+
+3. **LR finder behavior**:
+   - Only runs when starting fresh (epoch 1)
+   - Automatically reused if saved results exist
+   - Skipped when resuming from actual checkpoint (uses saved scheduler state)
+
 ## Troubleshooting
+
+**No training state checkpoints found (Resume Warning):**
+```
+⚠️  WARNING: No training state checkpoints found in ./checkpoint_1
+   Looking for files matching pattern: training_state_epoch*.pth
+   This can happen if training was interrupted before first epoch completed.
+   Starting training from scratch, but will use this directory for checkpoints.
+```
+**What this means:**
+- This is **expected behavior**, not an error
+- Happens when training was interrupted during epoch 1 (before first checkpoint was saved)
+- Training will restart from epoch 1 but reuse the checkpoint directory
+- If LR finder was run previously, results will be automatically loaded and reused
+- No need to worry - training will continue normally
 
 **HuggingFace Authentication Error (ImageNet-1K):**
 ```
