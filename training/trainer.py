@@ -513,7 +513,8 @@ class Trainer:
             optimizer=self.optimizer,
             criterion=criterion,
             device=self.device,
-            data_loader=clean_loader
+            data_loader=clean_loader,
+            checkpoint_dir=checkpoint_dir
         )
 
         # Run range test
