@@ -24,7 +24,7 @@ class ImageNetDataset(BaseDataset):
     NUM_CLASSES = 1000
     IMAGE_SIZE = (224, 224)
 
-    def __init__(self, train=True, data_dir='../data/imagenet', augmentation='strong', num_classes=None):
+    def __init__(self, train=True, data_dir='../data/imagenet', augmentation='strong', num_classes=None, hf_token=None):
         """
         Initialize ImageNet dataset.
 
@@ -35,6 +35,7 @@ class ImageNetDataset(BaseDataset):
                          Only applies to training data
             num_classes: Number of classes to use (default: 1000 for full ImageNet-1K)
                         Set to 10 for ImageNette/ImageWoof subsets
+            hf_token: HuggingFace API token (not used for local ImageNet, provided for API compatibility)
         """
         self.train = train
         self.data_dir = data_dir
