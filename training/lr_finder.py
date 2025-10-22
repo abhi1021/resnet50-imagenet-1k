@@ -44,92 +44,6 @@ class LRFinder:
         self.initial_model_state = None
         self.initial_optimizer_state = None
 
-    def _get_progress_path(self):
-        """Get the path for the progress checkpoint file."""
-        if self.checkpoint_dir is None:
-            return None
-        return os.path.join(self.checkpoint_dir, 'lr_finder_progress.json')
-
-    def save_progress(self, epoch, iteration, start_lr, end_lr, num_epochs, smoothing):
-        """
-        Save LR finder progress after each epoch.
-
-        Args:
-            epoch: Current epoch number (0-indexed)
-            iteration: Current iteration number
-            start_lr: Starting learning rate
-            end_lr: Ending learning rate
-            num_epochs: Total number of epochs
-            smoothing: Smoothing factor
-        """
-        progress_path = self._get_progress_path()
-        if progress_path is None:
-            return
-
-        progress = {
-            'epoch': epoch,
-            'iteration': iteration,
-            'lrs': self.lrs,
-            'losses': self.losses,
-            'best_loss': self.best_loss,
-            'start_lr': start_lr,
-            'end_lr': end_lr,
-            'num_epochs': num_epochs,
-            'smoothing': smoothing,
-            'model_state_dict': {k: v.cpu().tolist() if v.numel() < 1000 else None
-                                for k, v in self.model.state_dict().items()},
-            'optimizer_state_dict': str(self.optimizer.state_dict())  # Simplified for JSON
-        }
-
-        try:
-            with open(progress_path, 'w') as f:
-                json.dump(progress, f, indent=2)
-            print(f"💾 Saved LR finder progress: epoch {epoch+1}/{num_epochs}")
-        except Exception as e:
-            print(f"⚠️  Warning: Could not save LR finder progress: {e}")
-
-    def load_progress(self):
-        """
-        Load LR finder progress from previous interrupted run.
-
-        Returns:
-            dict: Progress state if found, None otherwise
-        """
-        progress_path = self._get_progress_path()
-        if progress_path is None or not os.path.exists(progress_path):
-            return None
-
-        try:
-            with open(progress_path, 'r') as f:
-                progress = json.load(f)
-
-            print(f"\n{'='*70}")
-            print(f"✓ Found interrupted LR finder progress")
-            print(f"{'='*70}")
-            print(f"  Resuming from epoch {progress['epoch']+1}/{progress['num_epochs']}")
-            print(f"  Collected {len(progress['lrs'])} data points so far")
-            print(f"{'='*70}\n")
-
-            # Restore state
-            self.lrs = progress['lrs']
-            self.losses = progress['losses']
-            self.best_loss = progress['best_loss']
-
-            return progress
-        except Exception as e:
-            print(f"⚠️  Warning: Could not load LR finder progress: {e}")
-            print(f"   Starting LR finder from scratch\n")
-            return None
-
-    def clear_progress(self):
-        """Delete progress checkpoint file when LR finder completes successfully."""
-        progress_path = self._get_progress_path()
-        if progress_path and os.path.exists(progress_path):
-            try:
-                os.remove(progress_path)
-                print(f"✓ Cleared LR finder progress checkpoint")
-            except Exception as e:
-                print(f"⚠️  Warning: Could not delete progress file: {e}")
 
     def range_test(self, start_lr=1e-6, end_lr=1.0, num_epochs=3, smoothing=0.05):
         """
@@ -144,49 +58,32 @@ class LRFinder:
         Returns:
             tuple: (learning_rates, losses)
         """
-        # Check for interrupted progress
-        progress = self.load_progress()
-        start_epoch = 0
-        iteration = 0
-        smoothed_loss = 0.0
+        print("\n" + "="*70)
+        print("LEARNING RATE FINDER - RANGE TEST")
+        print("="*70)
+        print(f"Testing learning rates from {start_lr:.2e} to {end_lr:.2e}")
+        print(f"Running for {num_epochs} epochs")
+        print(f"Note: Using clean data (no MixUp, no Label Smoothing)")
+        print("="*70 + "\n")
 
-        if progress:
-            # Resume from interrupted run
-            start_epoch = progress['epoch'] + 1
-            iteration = progress['iteration']
-            start_lr = progress['start_lr']
-            end_lr = progress['end_lr']
-            num_epochs = progress['num_epochs']
-            smoothing = progress['smoothing']
-            # lrs, losses, best_loss already restored in load_progress()
-        else:
-            # Fresh start
-            print("\n" + "="*70)
-            print("LEARNING RATE FINDER - RANGE TEST")
-            print("="*70)
-            print(f"Testing learning rates from {start_lr:.2e} to {end_lr:.2e}")
-            print(f"Running for {num_epochs} epochs")
-            print(f"Note: Using clean data (no MixUp, no Label Smoothing)")
-            print("="*70 + "\n")
-
-        # Save initial state (only if fresh start)
-        if not progress:
-            self.initial_model_state = {k: v.cpu().clone() for k, v in self.model.state_dict().items()}
-            self.initial_optimizer_state = self.optimizer.state_dict()
+        # Save initial state
+        self.initial_model_state = {k: v.cpu().clone() for k, v in self.model.state_dict().items()}
+        self.initial_optimizer_state = self.optimizer.state_dict()
 
         # Calculate total iterations
         total_iters = len(self.data_loader) * num_epochs
         lr_lambda = lambda x: np.exp(x * np.log(end_lr / start_lr) / total_iters)
 
-        # Set initial LR (or current LR if resuming)
-        if not progress:
-            for param_group in self.optimizer.param_groups:
-                param_group['lr'] = start_lr
+        # Set initial LR
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = start_lr
 
         # Run training
         self.model.train()
+        iteration = 0
+        smoothed_loss = 0.0
 
-        for epoch in range(start_epoch, num_epochs):
+        for epoch in range(num_epochs):
             pbar = tqdm(self.data_loader, desc=f"LR Finder Epoch {epoch+1}/{num_epochs}")
 
             for batch_idx, (data, target) in enumerate(pbar):
@@ -234,9 +131,6 @@ class LRFinder:
             if smoothed_loss > 4 * self.best_loss or torch.isnan(loss):
                 break
 
-            # Save progress after each epoch
-            self.save_progress(epoch, iteration, start_lr, end_lr, num_epochs, smoothing)
-
         # Restore initial state
         if self.initial_model_state:
             print("\nRestoring initial model and optimizer state...")
@@ -244,9 +138,6 @@ class LRFinder:
             self.optimizer.load_state_dict(self.initial_optimizer_state)
 
         print(f"✓ LR range test completed: {len(self.lrs)} data points collected\n")
-
-        # Clear progress checkpoint on successful completion
-        self.clear_progress()
 
         return self.lrs, self.losses
 
