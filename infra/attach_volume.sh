@@ -1,7 +1,7 @@
 # Variables (replace as needed)
-AZ="us-east-1a"
+AZ="us-east-1f"
 VOLUME_SIZE=400
-INSTANCE_ID="i-0b1c06431a45ac59f"
+INSTANCE_ID="i-09f870cb9f04e3e01"
 DEVICE_NAME="/dev/xvdf"
 VOLUME_ID="vol-029e937e578470342"
 

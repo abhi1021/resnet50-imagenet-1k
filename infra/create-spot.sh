@@ -11,13 +11,18 @@ INST_TYPE="g4dn.xlarge"
 ## -- Block device mapping (16GB root only) --
 #BLOCK_MAP='[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":16,"VolumeType":"gp3","DeleteOnTermination":true}}]'
 
-# --- Spot instance request ---
-aws ec2 run-instances \
-  --region $REGION \
-  --instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time}' \
-  --instance-type  $INST_TYPE\
-  --image-id $AMI_ID \
-  --key-name $KEY_NAME \
-  --security-group-ids $SG_ID \
-  --iam-instance-profile Name=$IAM_ROLE \
-  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=imagenet-spot},{Key=project,Value=erav4}]'
+  INSTANCE_ID=$(aws ec2 run-instances \
+  --instance-type 'g4dn.xlarge' \
+  --key-name 'erav4' \
+  --network-interfaces '{"AssociatePublicIpAddress":true,"DeviceIndex":0,"Groups":["sg-256f3f6e"]}' \
+  --iam-instance-profile '{"Arn":"arn:aws:iam::537907620791:instance-profile/erav4-ec2-role"}' \
+  --instance-market-options '{"MarketType":"spot","SpotOptions":{"MaxPrice":"0.219","SpotInstanceType":"one-time"}}' \
+  --metadata-options '{"HttpEndpoint":"enabled","HttpPutResponseHopLimit":2,"HttpTokens":"required"}' \
+  --placement '{"AvailabilityZone":"us-east-1f"}' \
+  --private-dns-name-options '{"HostnameType":"ip-name","EnableResourceNameDnsARecord":true,"EnableResourceNameDnsAAAARecord":false}'\
+  --count '1' \
+  --user-data 'c3VkbyBta2RpciAtcCAvbW50L2ltYWdlbmV0CnN1ZG8gbW91bnQgL2Rldi9udm1lMm4xIC9tbnQvaW1hZ2VuZXQKc3VkbyBjaG93biB1YnVudHU6dWJ1bnR1IC9tbnQvaW1hZ2VuZXQ=' \
+  --image-id 'ami-082cfdbb3062d6871' \
+  --tag-specifications '{"ResourceType":"instance","Tags":[{"Key":"Name","Value":"resnet50-trainer"}, {"Key":"project","Value":"erav4"}]}'\
+  --query 'InstanceId' --output text)
+
