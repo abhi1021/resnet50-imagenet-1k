@@ -506,6 +506,9 @@ class Trainer:
             pin_memory=use_pin_memory
         )
 
+        # Get checkpoint directory
+        checkpoint_dir = self.checkpoint_manager.get_checkpoint_dir()
+
         # Create LR Finder
         criterion = torch.nn.CrossEntropyLoss()
         lr_finder = LRFinder(
@@ -536,7 +539,6 @@ class Trainer:
         )
 
         # Save plot
-        checkpoint_dir = self.checkpoint_manager.get_checkpoint_dir()
         plot_path = f"{checkpoint_dir}/lr_finder_plot.png"
 
         if self.scheduler_type == 'onecycle':
