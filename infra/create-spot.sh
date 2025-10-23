@@ -12,7 +12,7 @@ INST_TYPE="g4dn.xlarge"
 #BLOCK_MAP='[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":16,"VolumeType":"gp3","DeleteOnTermination":true}}]'
 
   INSTANCE_ID=$(aws ec2 run-instances \
-  --instance-type 'g4dn.xlarge' \
+  --instance-type 'g5.2xlarge' \
   --key-name 'erav4' \
   --network-interfaces '{"AssociatePublicIpAddress":true,"DeviceIndex":0,"Groups":["sg-256f3f6e"]}' \
   --iam-instance-profile '{"Arn":"arn:aws:iam::537907620791:instance-profile/erav4-ec2-role"}' \
