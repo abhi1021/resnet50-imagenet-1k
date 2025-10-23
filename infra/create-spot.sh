@@ -7,6 +7,13 @@ IAM_ROLE="erav4-ec2-role"  # Replace with your IAM instance profile
 REGION="us-east-1"
 INST_TYPE="g4dn.xlarge"
 
+
+aws ec2 describe-spot-price-history \
+    --instance-types g5.2xlarge \
+    --start-time "$(python3 -c 'from datetime import datetime, timedelta; print((datetime.utcnow() - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"))')" \
+    --product-descriptions "Linux/UNIX" \
+    --region ap-south-1
+
 #
 ## -- Block device mapping (16GB root only) --
 #BLOCK_MAP='[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":16,"VolumeType":"gp3","DeleteOnTermination":true}}]'
