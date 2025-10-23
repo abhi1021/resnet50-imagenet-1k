@@ -12,7 +12,7 @@ source venv/bin/activate
 cd resnet50-imagenet-1k
 
 # Start the training, refer to the command in the message. Here it's for reference only
-python train.py --model resnet50-pytorch --dataset imagenet-1k --data-dir /mnt/imagenet/dataset --epochs 100 --batch-size 256 --scheduler onecycle --lr-finder --resume-from ./checkpoint_3 --hf-token <hf token> --hf-repo <hf repo> >> console-3.log  2>&1 &
+nohup python train.py --model resnet50-pytorch --dataset imagenet-1k --data-dir /mnt/imagenet/dataset --epochs 100 --batch-size 256 --scheduler onecycle --lr-finder --resume-from ./checkpoint_3 --hf-token <hf token> --hf-repo <hf repo> >> console-3.log  2>&1 &
 
 # watch GPU usage
 watch -n 0.01 nvidia-smi
