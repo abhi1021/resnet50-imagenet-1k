@@ -10,3 +10,10 @@ sudo chown ubuntu:ubuntu /mnt/imagenet
 cd /mnt/imagenet
 source venv/bin/activate
 cd resnet50-imagenet-1k
+
+
+# watch GPU usage
+watch -n 0.01 nvidia-smi
+
+# monitor CPU and memory usage
+htop
