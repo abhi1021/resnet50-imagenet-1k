@@ -1,12 +1,3 @@
-# --- Required variables ---
-AMI_ID="ami-03812fdd1e1001e52"        # Replace with your DLAMI or custom AMI ID
-KEY_NAME="erav4"               # Replace with your EC2 keypair
-SG_ID="sg-256f3f6e"          # Replace with your security group
-SUBNET_ID="subnet-xxxxxxxxxxxxxxxxx"  # Replace with your subnet
-IAM_ROLE="erav4-ec2-role"  # Replace with your IAM instance profile
-REGION="us-east-1"
-INST_TYPE="g4dn.xlarge"
-
 
 aws ec2 describe-spot-price-history \
     --instance-types g5.2xlarge \
@@ -14,11 +5,7 @@ aws ec2 describe-spot-price-history \
     --product-descriptions "Linux/UNIX" \
     --region us-east-1
 
-#
-## -- Block device mapping (16GB root only) --
-#BLOCK_MAP='[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":16,"VolumeType":"gp3","DeleteOnTermination":true}}]'
-
-  INSTANCE_ID=$(aws ec2 run-instances \
+INSTANCE_ID=$(aws ec2 run-instances \
   --instance-type 'g5.2xlarge' \
   --key-name 'erav4' \
   --network-interfaces '{"AssociatePublicIpAddress":true,"DeviceIndex":0,"Groups":["sg-256f3f6e"]}' \
@@ -37,11 +24,8 @@ aws service-quotas list-service-quotas --service-code ec2 --region sa-east-1 \
   --query "Quotas[?contains(Name, 'Spot')].{Name:Name, Value:Value, Adjustable:Adjustable, QuotaCode:QuotaCode}" \
   --output table
 
-#
-## -- Block device mapping (16GB root only) --
-#BLOCK_MAP='[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":16,"VolumeType":"gp3","DeleteOnTermination":true}}]'
 
-  INSTANCE_ID=$(aws ec2 run-instances \
+INSTANCE_ID=$(aws ec2 run-instances \
   --instance-type 'g5.2xlarge' \
   --key-name 'erav4' \
   --network-interfaces '{"AssociatePublicIpAddress":true,"DeviceIndex":0,"Groups":["sg-b77becd2"]}' \
@@ -58,7 +42,7 @@ aws service-quotas list-service-quotas --service-code ec2 --region sa-east-1 \
   --query 'InstanceId' --output text)
 
 
-  INSTANCE_ID=$(aws ec2 run-instances \
+INSTANCE_ID=$(aws ec2 run-instances \
   --instance-type 'g5.2xlarge' \
   --network-interfaces '{"AssociatePublicIpAddress":true,"DeviceIndex":0,"Groups":["sg-e18a1488"]}' \
   --iam-instance-profile '{"Arn":"arn:aws:iam::537907620791:instance-profile/erav4-ec2-role"}' \
