@@ -1,6 +1,6 @@
 #### ⚠️ ONE TIME TASK ONLY ####
 ### CREATE BUCKET ####
-aws s3api create-bucket --bucket erav4-imagenet-training --region us-east-1
+#aws s3api create-bucket --bucket erav4-imagenet-training --region eu-west-2
 
 # Create the IAM role for EC2
 aws iam create-role \
@@ -12,7 +12,8 @@ aws iam create-role \
       "Principal": {"Service": "ec2.amazonaws.com"},
       "Action": "sts:AssumeRole"
     }]
-  }'
+  }'\
+  --region eu-west-2
 
 # Attach your custom policy as inline policy
 aws iam put-role-policy \

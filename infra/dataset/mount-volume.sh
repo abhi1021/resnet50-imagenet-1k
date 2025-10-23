@@ -5,11 +5,31 @@
 # Create mount point and mount
 sudo mkdir -p /mnt/imagenet
 sudo mount /dev/nvme2n1 /mnt/imagenet
+
+# Set ownership to ubuntu user
 sudo chown ubuntu:ubuntu /mnt/imagenet
 
 cd /mnt/imagenet
+
+#activate the source
 source venv/bin/activate
+
 cd resnet50-imagenet-1k
+
+## start the training
+#python train.py \
+#--model resnet50-pytorch \
+#--dataset imagenet-1k \
+#--data-dir /mnt/imagenet/dataset \
+#--epochs 90 \
+#--batch-size 170 \
+#--scheduler onecycle \
+#--lr-finder \
+#--resume-from ./checkpoint_1 \
+#--hf-repo pandurangpatil/imagenet1k >> console.log  &
+#cd /mnt/imagenet
+#source venv/bin/activate
+#cd resnet50-imagenet-1k
 
 # Start the training, refer to the command in the message. Here it's for reference only
 nohup python train.py --model resnet50-pytorch --dataset imagenet-1k --data-dir /mnt/imagenet/dataset --epochs 100 --batch-size 256 --scheduler onecycle --lr-finder --resume-from ./checkpoint_3 --hf-token <hf token> --hf-repo <hf repo> >> console-3.log  2>&1 &
