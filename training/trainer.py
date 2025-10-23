@@ -443,6 +443,13 @@ class Trainer:
         print("\n" + "="*70)
         print("STARTING LR FINDER")
         print("="*70)
+        print(f"Configuration:")
+        print(f"  Epochs: {config.get('num_epochs', 3)}")
+        print(f"  Start LR: {config.get('start_lr', 1e-6)}")
+        print(f"  End LR: {config.get('end_lr', 1.0)}")
+        print(f"  Selection Method: {config.get('selection_method', 'steepest_gradient')}")
+        print(f"  Data Loader Workers: {config.get('num_workers', 4)}")
+        print("="*70)
 
         # Create clean data loader (no mixup, no label smoothing)
         from data_loaders.transforms import TestTransformWrapper, ImageNetTestTransform
@@ -498,11 +505,14 @@ class Trainer:
         # Only use pin_memory on CUDA devices
         use_pin_memory = self.device.type == 'cuda'
 
+        # Get num_workers from config, default to 4 if not specified
+        num_workers_lr_finder = config.get('num_workers', 4)
+
         clean_loader = torch.utils.data.DataLoader(
             clean_dataset,
             batch_size=self.train_loader.batch_size,
             shuffle=True,
-            num_workers=4,
+            num_workers=num_workers_lr_finder,
             pin_memory=use_pin_memory
         )
 

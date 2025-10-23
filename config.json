@@ -1,4 +1,8 @@
 {
+  "data_loader": {
+    "num_workers": 8,
+    "num_workers_lr_finder": 4
+  },
   "lr_finder": {
     "num_epochs": 2,
     "start_lr": 1e-6,
@@ -19,6 +23,23 @@
       "T_mult": 1,
       "eta_min": 1e-4
     }
+  },
+  "data_loader_description": {
+    "num_workers": "Number of worker processes for data loading during training (default: 4)",
+    "num_workers_lr_finder": "Number of worker processes for data loading during LR finder (default: 4)",
+    "recommendations": {
+      "cpu_cores_less_than_4": 2,
+      "cpu_cores_4_to_8": 4,
+      "cpu_cores_greater_than_8": "6-8",
+      "limited_ram": 2,
+      "mps_mac": "0-2"
+    },
+    "notes": [
+      "Each worker consumes ~100-500MB CPU RAM",
+      "Higher num_workers speeds up data loading but uses more memory",
+      "For LR finder, you may want fewer workers since it's a short test",
+      "Set to 0 to disable multiprocessing (useful for debugging)"
+    ]
   },
   "lr_finder_description": {
     "num_epochs": "Number of epochs to run LR range test (default: 3, recommended: 2-5)",

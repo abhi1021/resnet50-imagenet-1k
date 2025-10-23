@@ -361,22 +361,27 @@ def main():
 
     # Create data loaders
     use_pin_memory = device.type == 'cuda'
+
+    # Get num_workers from config, default to 4 if not specified
+    num_workers = config_data.get('data_loader', {}).get('num_workers', 4)
+
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=4,
+        num_workers=num_workers,
         pin_memory=use_pin_memory
     )
     test_loader = torch.utils.data.DataLoader(
         test_dataset,
         batch_size=args.batch_size,
         shuffle=False,
-        num_workers=4,
+        num_workers=num_workers,
         pin_memory=use_pin_memory
     )
     print(f"✓ Train batches: {len(train_loader)}")
-    print(f"✓ Test batches: {len(test_loader)}\n")
+    print(f"✓ Test batches: {len(test_loader)}")
+    print(f"✓ Data loader workers: {num_workers}\n")
 
     # Visualize samples if requested
     if args.visualize_samples:
@@ -514,6 +519,10 @@ def main():
                 'end_lr': 1.0,
                 'selection_method': 'steepest_gradient'
             })
+
+            # Add num_workers_lr_finder to config
+            num_workers_lr_finder = config_data.get('data_loader', {}).get('num_workers_lr_finder', 4)
+            lr_finder_config['num_workers'] = num_workers_lr_finder
 
             suggested_lrs = trainer.run_lr_finder(lr_finder_config)
 
