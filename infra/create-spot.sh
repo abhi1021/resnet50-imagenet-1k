@@ -12,7 +12,7 @@ aws ec2 describe-spot-price-history \
     --instance-types g5.2xlarge \
     --start-time "$(python3 -c 'from datetime import datetime, timedelta; print((datetime.utcnow() - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"))')" \
     --product-descriptions "Linux/UNIX" \
-    --region ap-south-1
+    --region us-east-1
 
 #
 ## -- Block device mapping (16GB root only) --
