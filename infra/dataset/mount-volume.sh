@@ -7,3 +7,6 @@ sudo mkdir -p /mnt/imagenet
 sudo mount /dev/nvme2n1 /mnt/imagenet
 sudo chown ubuntu:ubuntu /mnt/imagenet
 
+cd /mnt/imagenet
+source venv/bin/activate
+cd resnet50-imagenet-1k
