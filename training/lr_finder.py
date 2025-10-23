@@ -16,7 +16,7 @@ class LRFinder:
     Helps find optimal learning rates before training.
     """
 
-    def __init__(self, model, optimizer, criterion, device, data_loader, checkpoint_dir=None):
+    def __init__(self, model, optimizer, criterion, device, data_loader, checkpoint_dir=None, progress_bar_config=None):
         """
         Initialize LR Finder.
 
@@ -27,6 +27,7 @@ class LRFinder:
             device: Device to run on (cuda/mps/cpu)
             data_loader: DataLoader for LR range test
             checkpoint_dir: Directory to save/load progress checkpoints (optional)
+            progress_bar_config: Progress bar configuration dict (optional)
         """
         self.model = model
         self.optimizer = optimizer
@@ -34,6 +35,13 @@ class LRFinder:
         self.device = device
         self.data_loader = data_loader
         self.checkpoint_dir = checkpoint_dir
+
+        # Progress bar configuration
+        self.progress_bar_config = progress_bar_config or {
+            'enable_for_file_output': True,
+            'miniters': 50,
+            'mininterval': 30.0
+        }
 
         # Storage for results
         self.lrs = []
@@ -84,7 +92,13 @@ class LRFinder:
         smoothed_loss = 0.0
 
         for epoch in range(num_epochs):
-            pbar = tqdm(self.data_loader, desc=f"LR Finder Epoch {epoch+1}/{num_epochs}")
+            pbar = tqdm(
+                self.data_loader,
+                desc=f"LR Finder Epoch {epoch+1}/{num_epochs}",
+                disable=not self.progress_bar_config.get('enable_for_file_output', True),
+                miniters=self.progress_bar_config.get('miniters', 50),
+                mininterval=self.progress_bar_config.get('mininterval', 30.0)
+            )
 
             for batch_idx, (data, target) in enumerate(pbar):
                 data, target = data.to(self.device), target.to(self.device)

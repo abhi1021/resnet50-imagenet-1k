@@ -1,4 +1,9 @@
 {
+  "progress_bar": {
+    "enable_for_file_output": true,
+    "miniters": 50,
+    "mininterval": 30.0
+  },
   "data_loader": {
     "num_workers": 8,
     "num_workers_lr_finder": 4
@@ -23,6 +28,20 @@
       "T_mult": 1,
       "eta_min": 1e-4
     }
+  },
+  "progress_bar_description": {
+    "enable_for_file_output": "Force progress bar display when output is redirected to file (default: true)",
+    "miniters": "Minimum iterations between progress bar updates (default: 50). Higher = less frequent updates = smaller log files",
+    "mininterval": "Minimum seconds between progress bar updates (default: 30.0). Higher = less frequent updates = smaller log files",
+    "notes": [
+      "When running 'python train.py > train.log 2>&1 &', progress bars need special configuration",
+      "miniters: Update every N batches (e.g., 50 means update every 50 batches instead of every batch)",
+      "mininterval: Update at most every N seconds (e.g., 30.0 means update at most every 30 seconds)",
+      "Both miniters and mininterval work together - whichever threshold is reached first triggers an update",
+      "For smaller logs: increase miniters to 100+ or mininterval to 60+",
+      "For more frequent updates: decrease miniters to 10-20 or mininterval to 5-10",
+      "Set enable_for_file_output to false to disable progress bars in log files"
+    ]
   },
   "data_loader_description": {
     "num_workers": "Number of worker processes for data loading during training (default: 4)",

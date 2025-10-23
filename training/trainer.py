@@ -23,7 +23,8 @@ class Trainer:
                  device=None, checkpoint_manager=None, metrics_tracker=None,
                  scheduler_type='onecycle', use_mixup=True, mixup_alpha=0.2,
                  label_smoothing=0.1, use_amp=True, gradient_clip=1.0,
-                 hf_uploader=None, model_name='model', config=None):
+                 hf_uploader=None, model_name='model', config=None,
+                 progress_bar_config=None):
         """
         Initialize trainer.
 
@@ -45,6 +46,7 @@ class Trainer:
             hf_uploader: HuggingFaceUploader instance (optional)
             model_name: Model name for logging
             config: Training configuration dict
+            progress_bar_config: Progress bar configuration dict
         """
         self.model = model
         self.train_loader = train_loader
@@ -66,6 +68,13 @@ class Trainer:
         self.hf_uploader = hf_uploader
         self.model_name = model_name
         self.config = config or {}
+
+        # Progress bar configuration
+        self.progress_bar_config = progress_bar_config or {
+            'enable_for_file_output': True,
+            'miniters': 50,
+            'mininterval': 30.0
+        }
 
         # Mixed precision scaler
         self.scaler = GradScaler() if self.use_amp else None
@@ -95,7 +104,13 @@ class Trainer:
             tuple: (avg_loss, accuracy)
         """
         self.model.train()
-        pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
+        pbar = tqdm(
+            self.train_loader,
+            desc=f"Epoch {epoch}",
+            disable=not self.progress_bar_config.get('enable_for_file_output', True),
+            miniters=self.progress_bar_config.get('miniters', 50),
+            mininterval=self.progress_bar_config.get('mininterval', 30.0)
+        )
         correct = 0
         processed = 0
         epoch_loss = 0
@@ -527,7 +542,8 @@ class Trainer:
             criterion=criterion,
             device=self.device,
             data_loader=clean_loader,
-            checkpoint_dir=checkpoint_dir
+            checkpoint_dir=checkpoint_dir,
+            progress_bar_config=self.progress_bar_config
         )
 
         # Run range test

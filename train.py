@@ -303,6 +303,13 @@ def main():
     # Load config file
     config_data = load_config_file(args.config)
 
+    # Get progress bar config with defaults
+    progress_bar_config = config_data.get('progress_bar', {
+        'enable_for_file_output': True,
+        'miniters': 50,
+        'mininterval': 30.0
+    })
+
     # Print configuration
     print("\n" + "="*70)
     print("TRAINING CONFIGURATION")
@@ -497,7 +504,8 @@ def main():
         gradient_clip=args.gradient_clip,
         hf_uploader=hf_uploader,
         model_name=args.model,
-        config=training_config
+        config=training_config,
+        progress_bar_config=progress_bar_config
     )
 
     # Run LR Finder if requested (skip if resuming from checkpoint)
