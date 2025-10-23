@@ -15,9 +15,9 @@ VOLUME_ID="vol-029e937e578470342"
 
 # Attach to running EC2 instance
 aws ec2 attach-volume \
-  --volume-id $VOLUME_ID \
-  --instance-id $INSTANCE_ID \
-  --device $DEVICE_NAME
+  --volume-id "vol-029e937e578470342" \
+  --instance-id "i-019175ebf204bf786" \
+  --device "/dev/xvdf"
 
 #{
 #  "AttachTime": "2025-10-18T13:43:39.479000+00:00",
