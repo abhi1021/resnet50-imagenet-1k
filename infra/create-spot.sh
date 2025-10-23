@@ -16,7 +16,7 @@ INST_TYPE="g4dn.xlarge"
   --key-name 'erav4' \
   --network-interfaces '{"AssociatePublicIpAddress":true,"DeviceIndex":0,"Groups":["sg-256f3f6e"]}' \
   --iam-instance-profile '{"Arn":"arn:aws:iam::537907620791:instance-profile/erav4-ec2-role"}' \
-  --instance-market-options '{"MarketType":"spot","SpotOptions":{"MaxPrice":"0.219","SpotInstanceType":"one-time"}}' \
+  --instance-market-options '{"MarketType":"spot","SpotOptions":{"MaxPrice":"0.44","SpotInstanceType":"one-time"}}' \
   --metadata-options '{"HttpEndpoint":"enabled","HttpPutResponseHopLimit":2,"HttpTokens":"required"}' \
   --placement '{"AvailabilityZone":"us-east-1f"}' \
   --private-dns-name-options '{"HostnameType":"ip-name","EnableResourceNameDnsARecord":true,"EnableResourceNameDnsAAAARecord":false}'\
