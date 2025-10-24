@@ -7,7 +7,7 @@ from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, OneCycleLR
 
 def get_scheduler(name, optimizer, train_loader, epochs=100, config=None):
     """
-    Get learning rate scheduler by name.
+    Get a learning rate scheduler by name.
 
     Args:
         name: Scheduler name ('onecycle', 'cosine')

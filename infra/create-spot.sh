@@ -15,6 +15,7 @@ INSTANCE_ID=$(aws ec2 run-instances \
   --placement '{"AvailabilityZone":"us-east-1f"}' \
   --private-dns-name-options '{"HostnameType":"ip-name","EnableResourceNameDnsARecord":true,"EnableResourceNameDnsAAAARecord":false}'\
   --count '1' \
+  --region us-east-1 \
   --user-data 'c3VkbyBta2RpciAtcCAvbW50L2ltYWdlbmV0CnN1ZG8gbW91bnQgL2Rldi9udm1lMm4xIC9tbnQvaW1hZ2VuZXQKc3VkbyBjaG93biB1YnVudHU6dWJ1bnR1IC9tbnQvaW1hZ2VuZXQ=' \
   --image-id 'ami-082cfdbb3062d6871' \
   --tag-specifications '{"ResourceType":"instance","Tags":[{"Key":"Name","Value":"resnet50-trainer"}, {"Key":"project","Value":"erav4"}]}'\

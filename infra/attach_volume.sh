@@ -14,9 +14,9 @@ VOLUME_ID="vol-029e937e578470342"
 #  --query 'VolumeId' --output text)
 
 # Attach to running EC2 instance
-aws ec2 attach-volume \
+aws ec2 attach-volume --region us-east-1 \
   --volume-id "vol-029e937e578470342" \
-  --instance-id "i-019175ebf204bf786" \
+  --instance-id "i-0eb9dadf1127d0f1b" \
   --device "/dev/xvdf"
 
 #{
@@ -26,6 +26,11 @@ aws ec2 attach-volume \
 #  "State": "attaching",
 #  "VolumeId": "vol-029e937e578470342"
 #}
+aws ec2 detach-volume --region us-east-1 \
+  --volume-id "vol-029e937e578470342" \
+  --instance-id "i-0eb9dadf1127d0f1b" \
+  --device "/dev/xvdf"
+
 
 
 
