@@ -132,9 +132,7 @@ class Trainer:
             desc=f"Epoch {epoch}",
             disable=not self.progress_bar_config.get('enable_for_file_output', True),
             miniters=self.progress_bar_config.get('miniters', 1),
-            mininterval=self.progress_bar_config.get('mininterval', 30.0),
-            total=total_batches,
-            initial=start_batch_idx
+            mininterval=self.progress_bar_config.get('mininterval', 30.0)
         )
         correct = 0
         processed = 0
@@ -143,7 +141,6 @@ class Trainer:
         for batch_idx, (data, target) in enumerate(pbar):
             # Skip batches if resuming mid-epoch
             if batch_idx < start_batch_idx:
-                pbar.update(1)
                 continue
             data, target = data.to(self.device), target.to(self.device)
             self.optimizer.zero_grad()
@@ -210,17 +207,26 @@ class Trainer:
 
             # Save intermediate checkpoint if at checkpoint position
             if self.enable_intermediate_checkpoints and batch_idx in intermediate_checkpoints:
+                # Calculate progress percentage and current metrics
+                progress_pct = ((batch_idx + 1) / total_batches) * 100
+                current_acc = 100. * correct / processed
+                current_loss = epoch_loss / (batch_idx + 1)
+                current_lr = self.optimizer.param_groups[0]['lr']
+
+                # Print progress with metrics
+                print(f"\n📊 Progress: {progress_pct:.1f}% ({batch_idx + 1}/{total_batches} batches) | "
+                      f"loss={current_loss:.4f}, acc={current_acc:.2f}%, lr={current_lr:.6f}")
+
                 metrics = {
-                    'train_acc': 100. * correct / processed,
+                    'train_acc': current_acc,
                     'test_acc': 0.0,  # Not available mid-epoch
-                    'train_loss': epoch_loss / (batch_idx + 1),
+                    'train_loss': current_loss,
                     'test_loss': 0.0  # Not available mid-epoch
                 }
                 self.checkpoint_manager.save_training_state(
                     self.model, self.optimizer, self.scheduler, epoch, metrics,
                     self.config, self.metrics_tracker, self.scaler, batch_idx=batch_idx
                 )
-                pbar.refresh()  # Force display update after saving checkpoint
 
         avg_loss = epoch_loss / len(self.train_loader)
         accuracy = 100. * correct / processed
