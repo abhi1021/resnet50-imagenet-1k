@@ -24,7 +24,8 @@ class Trainer:
                  scheduler_type='onecycle', use_mixup=True, mixup_alpha=0.2,
                  label_smoothing=0.1, use_amp=True, gradient_clip=1.0,
                  hf_uploader=None, model_name='model', config=None,
-                 progress_bar_config=None):
+                 progress_bar_config=None, enable_intermediate_checkpoints=False,
+                 intermediate_checkpoint_frequency=0.25):
         """
         Initialize trainer.
 
@@ -47,6 +48,8 @@ class Trainer:
             model_name: Model name for logging
             config: Training configuration dict
             progress_bar_config: Progress bar configuration dict
+            enable_intermediate_checkpoints: Enable saving checkpoints during epoch at specified frequency
+            intermediate_checkpoint_frequency: Frequency to save intermediate checkpoints (default: 0.25 = 25%)
         """
         self.model = model
         self.train_loader = train_loader
@@ -72,9 +75,13 @@ class Trainer:
         # Progress bar configuration
         self.progress_bar_config = progress_bar_config or {
             'enable_for_file_output': True,
-            'miniters': 50,
+            'miniters': 1,
             'mininterval': 30.0
         }
+
+        # Intermediate checkpoint configuration
+        self.enable_intermediate_checkpoints = enable_intermediate_checkpoints
+        self.intermediate_checkpoint_frequency = intermediate_checkpoint_frequency
 
         # Mixed precision scaler
         self.scaler = GradScaler() if self.use_amp else None
@@ -93,22 +100,38 @@ class Trainer:
         y_a, y_b = y, y[index]
         return mixed_x, y_a, y_b, lam
 
-    def train_epoch(self, epoch):
+    def train_epoch(self, epoch, start_batch_idx=0):
         """
         Train for one epoch.
 
         Args:
             epoch: Current epoch number
+            start_batch_idx: Batch index to start from (for resuming mid-epoch)
 
         Returns:
             tuple: (avg_loss, accuracy)
         """
         self.model.train()
+
+        # Calculate intermediate checkpoint positions
+        total_batches = len(self.train_loader)
+        intermediate_checkpoints = []
+        if self.enable_intermediate_checkpoints:
+            freq = self.intermediate_checkpoint_frequency
+            # Save at 25%, 50%, 75% of total batches
+            intermediate_checkpoints = [
+                int(total_batches * freq),
+                int(total_batches * freq * 2),
+                int(total_batches * freq * 3)
+            ]
+            # Remove duplicates and ensure they're within bounds
+            intermediate_checkpoints = sorted(set([cp for cp in intermediate_checkpoints if cp < total_batches]))
+
         pbar = tqdm(
             self.train_loader,
             desc=f"Epoch {epoch}",
             disable=not self.progress_bar_config.get('enable_for_file_output', True),
-            miniters=self.progress_bar_config.get('miniters', 50),
+            miniters=self.progress_bar_config.get('miniters', 1),
             mininterval=self.progress_bar_config.get('mininterval', 30.0)
         )
         correct = 0
@@ -116,6 +139,9 @@ class Trainer:
         epoch_loss = 0
 
         for batch_idx, (data, target) in enumerate(pbar):
+            # Skip batches if resuming mid-epoch
+            if batch_idx < start_batch_idx:
+                continue
             data, target = data.to(self.device), target.to(self.device)
             self.optimizer.zero_grad()
 
@@ -179,6 +205,29 @@ class Trainer:
                 'lr': f'{current_lr:.6f}'
             })
 
+            # Save intermediate checkpoint if at checkpoint position
+            if self.enable_intermediate_checkpoints and batch_idx in intermediate_checkpoints:
+                # Calculate progress percentage and current metrics
+                progress_pct = ((batch_idx + 1) / total_batches) * 100
+                current_acc = 100. * correct / processed
+                current_loss = epoch_loss / (batch_idx + 1)
+                current_lr = self.optimizer.param_groups[0]['lr']
+
+                # Print progress with metrics
+                print(f"\n📊 Progress: {progress_pct:.1f}% ({batch_idx + 1}/{total_batches} batches) | "
+                      f"loss={current_loss:.4f}, acc={current_acc:.2f}%, lr={current_lr:.6f}")
+
+                metrics = {
+                    'train_acc': current_acc,
+                    'test_acc': 0.0,  # Not available mid-epoch
+                    'train_loss': current_loss,
+                    'test_loss': 0.0  # Not available mid-epoch
+                }
+                self.checkpoint_manager.save_training_state(
+                    self.model, self.optimizer, self.scheduler, epoch, metrics,
+                    self.config, self.metrics_tracker, self.scaler, batch_idx=batch_idx
+                )
+
         avg_loss = epoch_loss / len(self.train_loader)
         accuracy = 100. * correct / processed
         return avg_loss, accuracy
@@ -219,9 +268,14 @@ class Trainer:
             checkpoint_path: Path to checkpoint file
 
         Returns:
-            int: Epoch to start training from (checkpoint epoch + 1)
+            tuple: (start_epoch, start_batch_idx) where start_batch_idx is 0 for full epoch checkpoint,
+                   or the batch index to resume from for intermediate checkpoints
         """
         checkpoint = self.checkpoint_manager.load_training_state(checkpoint_path)
+
+        # Check if this is an intermediate checkpoint
+        batch_idx = checkpoint.get('batch_idx', None)
+        is_intermediate = batch_idx is not None
 
         # Restore model state
         self.model.load_state_dict(checkpoint['model_state_dict'])
@@ -268,18 +322,28 @@ class Trainer:
                 torch.cuda.set_rng_state_all(rng['cuda'])
             print("✓ Restored RNG states")
 
-        start_epoch = checkpoint['epoch'] + 1
+        # Determine start epoch and batch
+        if is_intermediate:
+            start_epoch = checkpoint['epoch']
+            start_batch_idx = batch_idx + 1  # Resume from next batch
+        else:
+            start_epoch = checkpoint['epoch'] + 1
+            start_batch_idx = 0
 
-        # Display detailed last epoch state information
+        # Display detailed last checkpoint state information
         print(f"\n{'='*70}")
-        print(f"LAST TRAINING STATE (Epoch {checkpoint['epoch']})")
+        if is_intermediate:
+            print(f"LAST TRAINING STATE (Epoch {checkpoint['epoch']}, Batch {batch_idx})")
+        else:
+            print(f"LAST TRAINING STATE (Epoch {checkpoint['epoch']})")
         print(f"{'='*70}")
         print(f"Training:")
         print(f"  Loss: {checkpoint.get('train_loss', 0.0):.4f}")
         print(f"  Accuracy: {checkpoint.get('train_accuracy', 0.0):.2f}%")
-        print(f"Test:")
-        print(f"  Loss: {checkpoint.get('test_loss', 0.0):.4f}")
-        print(f"  Accuracy: {checkpoint.get('test_accuracy', 0.0):.2f}%")
+        if not is_intermediate:
+            print(f"Test:")
+            print(f"  Loss: {checkpoint.get('test_loss', 0.0):.4f}")
+            print(f"  Accuracy: {checkpoint.get('test_accuracy', 0.0):.2f}%")
 
         # Get current LR from optimizer (already restored)
         current_lr = self.optimizer.param_groups[0]['lr']
@@ -287,14 +351,21 @@ class Trainer:
         print(f"{'='*70}\n")
 
         print(f"{'='*70}")
-        print(f"RESUMING TRAINING FROM EPOCH {start_epoch}")
-        print(f"{'='*70}")
+        if is_intermediate:
+            print(f"RESUMING TRAINING FROM EPOCH {start_epoch}, BATCH {start_batch_idx}")
+            print(f"{'='*70}")
+            print(f"Checkpoint type: Intermediate (mid-epoch)")
+            print(f"Will continue from batch {start_batch_idx} of epoch {start_epoch}")
+        else:
+            print(f"RESUMING TRAINING FROM EPOCH {start_epoch}")
+            print(f"{'='*70}")
+            print(f"Checkpoint type: Full epoch")
         print(f"Previous best accuracy: {self.metrics_tracker.best_test_acc:.2f}% (epoch {self.metrics_tracker.best_epoch})")
         print(f"{'='*70}\n")
 
-        return start_epoch
+        return start_epoch, start_batch_idx
 
-    def run(self, epochs, patience=15, checkpoint_epochs=None, target_accuracy=None, start_epoch=1):
+    def run(self, epochs, patience=15, checkpoint_epochs=None, target_accuracy=None, start_epoch=1, start_batch_idx=0):
         """
         Run the complete training loop.
 
@@ -304,6 +375,7 @@ class Trainer:
             checkpoint_epochs: List of epochs to save as breakpoint checkpoints (kept forever)
             target_accuracy: Target accuracy to stop training
             start_epoch: Epoch to start from (default: 1, >1 when resuming)
+            start_batch_idx: Batch index to start from (default: 0, >0 when resuming from intermediate checkpoint)
 
         Returns:
             float: Best test accuracy achieved
@@ -321,7 +393,9 @@ class Trainer:
             print(f"✓ Saved initial config: {config_path}\n")
 
         for epoch in range(start_epoch, epochs + 1):
-            train_loss, train_acc = self.train_epoch(epoch)
+            # Use start_batch_idx only for the first epoch when resuming from intermediate checkpoint
+            batch_idx_for_epoch = start_batch_idx if epoch == start_epoch else 0
+            train_loss, train_acc = self.train_epoch(epoch, start_batch_idx=batch_idx_for_epoch)
             test_loss, test_acc = self.test()
 
             # Step scheduler after epoch for CosineAnnealing (OneCycle steps per batch)
@@ -363,6 +437,10 @@ class Trainer:
                 self.model, self.optimizer, self.scheduler, epoch, metrics,
                 self.config, self.metrics_tracker, self.scaler
             )
+
+            # Cleanup intermediate checkpoints for this epoch now that full epoch is complete
+            if self.enable_intermediate_checkpoints:
+                self.checkpoint_manager.cleanup_intermediate_checkpoints(epoch)
 
             # Save metrics.json after EVERY epoch to ensure it's always up-to-date
             checkpoint_dir = self.checkpoint_manager.get_checkpoint_dir()

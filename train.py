@@ -195,6 +195,8 @@ def main():
     # Checkpoint management
     parser.add_argument('--keep-last-n-checkpoints', type=int, default=5,
                        help='Number of recent epoch checkpoints to keep (default: 5, -1=all, 0=only breakpoints)')
+    parser.add_argument('--enable-intermediate-checkpoints', action='store_true',
+                       help='Enable saving checkpoints during epoch at 25%%, 50%%, 75%% batch completion')
 
     # Visualization
     parser.add_argument('--visualize-samples', action='store_true',
@@ -210,12 +212,18 @@ def main():
     if args.resume_from:
         if os.path.isdir(args.resume_from):
             # Directory path - find latest checkpoint
-            resume_checkpoint_path = CheckpointManager.find_latest_epoch_checkpoint(args.resume_from)
+            # Use find_latest_checkpoint with include_intermediate based on flag
+            resume_checkpoint_path = CheckpointManager.find_latest_checkpoint(
+                args.resume_from,
+                include_intermediate=args.enable_intermediate_checkpoints
+            )
             if not resume_checkpoint_path:
                 print(f"\n{'='*70}")
                 print(f"⚠️  WARNING: No training state checkpoints found in {args.resume_from}")
                 print(f"{'='*70}")
                 print(f"   Looking for files matching pattern: training_state_epoch*.pth")
+                if args.enable_intermediate_checkpoints:
+                    print(f"   Also looking for: intermediate_epoch*_batch*.pth")
                 print(f"   This can happen if training was interrupted before first epoch completed.")
                 print(f"   Starting training from scratch, but will use this directory for checkpoints.")
                 print(f"   Directory: {args.resume_from}")
@@ -505,7 +513,8 @@ def main():
         hf_uploader=hf_uploader,
         model_name=args.model,
         config=training_config,
-        progress_bar_config=progress_bar_config
+        progress_bar_config=progress_bar_config,
+        enable_intermediate_checkpoints=args.enable_intermediate_checkpoints
     )
 
     # Run LR Finder if requested (skip if resuming from checkpoint)
@@ -610,12 +619,18 @@ def main():
 
     # Resume from checkpoint if specified
     start_epoch = 1
+    start_batch_idx = 0
     if resume_checkpoint_path:
-        start_epoch = trainer.resume_from_checkpoint(resume_checkpoint_path)
+        start_epoch, start_batch_idx = trainer.resume_from_checkpoint(resume_checkpoint_path)
 
     # Run training
     print("\n" + "="*70)
-    print("STARTING TRAINING" if start_epoch == 1 else f"RESUMING TRAINING FROM EPOCH {start_epoch}")
+    if start_batch_idx > 0:
+        print(f"RESUMING TRAINING FROM EPOCH {start_epoch}, BATCH {start_batch_idx}")
+    elif start_epoch > 1:
+        print(f"RESUMING TRAINING FROM EPOCH {start_epoch}")
+    else:
+        print("STARTING TRAINING")
     print("="*70 + "\n")
 
     # Determine target accuracy for early stopping
@@ -627,7 +642,8 @@ def main():
         epochs=args.epochs,
         patience=15,
         target_accuracy=target_accuracy,
-        start_epoch=start_epoch
+        start_epoch=start_epoch,
+        start_batch_idx=start_batch_idx
     )
 
     # Save results

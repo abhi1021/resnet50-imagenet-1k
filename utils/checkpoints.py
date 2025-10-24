@@ -162,7 +162,7 @@ class CheckpointManager:
         return sorted(checkpoints)
 
     def save_training_state(self, model, optimizer, scheduler, epoch, metrics,
-                           config, metrics_tracker=None, scaler=None, filename=None):
+                           config, metrics_tracker=None, scaler=None, filename=None, batch_idx=None):
         """
         Save complete training state for resumption.
 
@@ -175,19 +175,24 @@ class CheckpointManager:
             config: Training configuration dict
             metrics_tracker: MetricsTracker instance (optional)
             scaler: GradScaler instance for AMP (optional)
-            filename: Optional custom filename (default: training_state_epoch{N}.pth)
+            filename: Optional custom filename (default: training_state_epoch{N}.pth or intermediate_epoch{N}_batch{M}.pth)
+            batch_idx: Optional batch index for intermediate checkpoints (creates intermediate checkpoint if provided)
 
         Returns:
             str: Path to saved checkpoint
         """
         if filename is None:
-            filename = f'training_state_epoch{epoch}.pth'
+            if batch_idx is not None:
+                filename = f'intermediate_epoch{epoch}_batch{batch_idx}.pth'
+            else:
+                filename = f'training_state_epoch{epoch}.pth'
 
         checkpoint_path = os.path.join(self.checkpoint_dir, filename)
 
         # Save complete training state
         checkpoint = {
             'epoch': epoch,
+            'batch_idx': batch_idx,  # None for full epoch checkpoints, set for intermediate checkpoints
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
@@ -224,7 +229,10 @@ class CheckpointManager:
             }
 
         torch.save(checkpoint, checkpoint_path)
-        print(f"💾 Saved training state: {checkpoint_path}")
+        if batch_idx is not None:
+            print(f"💾 Saved intermediate checkpoint: {checkpoint_path} (batch {batch_idx})")
+        else:
+            print(f"💾 Saved training state: {checkpoint_path}")
 
         return checkpoint_path
 
@@ -287,6 +295,90 @@ class CheckpointManager:
         print(f"🔍 Found latest checkpoint at epoch {latest_epoch}: {latest_path}")
 
         return latest_path
+
+    @staticmethod
+    def find_latest_checkpoint(checkpoint_dir, include_intermediate=False):
+        """
+        Find the most recent checkpoint in a directory.
+
+        Args:
+            checkpoint_dir: Directory to search for checkpoints
+            include_intermediate: If True, also consider intermediate checkpoints;
+                                 if False, only consider full epoch checkpoints
+
+        Returns:
+            str: Path to the latest checkpoint, or None if no checkpoints found
+        """
+        if not os.path.exists(checkpoint_dir):
+            return None
+
+        # Pattern to match training_state_epoch{N}.pth
+        epoch_pattern = re.compile(r'^training_state_epoch(\d+)\.pth$')
+        # Pattern to match intermediate_epoch{N}_batch{M}.pth
+        intermediate_pattern = re.compile(r'^intermediate_epoch(\d+)_batch(\d+)\.pth$')
+
+        checkpoints = []
+
+        # Find full epoch checkpoints
+        for filename in os.listdir(checkpoint_dir):
+            match = epoch_pattern.match(filename)
+            if match:
+                epoch_num = int(match.group(1))
+                # Use -1 as batch_idx to indicate full epoch checkpoint
+                # This ensures full epoch checkpoints are considered "after" intermediate ones
+                checkpoints.append((epoch_num, float('inf'), filename, 'epoch'))
+
+        # Find intermediate checkpoints if requested
+        if include_intermediate:
+            for filename in os.listdir(checkpoint_dir):
+                match = intermediate_pattern.match(filename)
+                if match:
+                    epoch_num = int(match.group(1))
+                    batch_num = int(match.group(2))
+                    checkpoints.append((epoch_num, batch_num, filename, 'intermediate'))
+
+        if not checkpoints:
+            return None
+
+        # Sort by epoch number (descending), then by batch number (descending)
+        # Full epoch checkpoints have batch_num = inf, so they come first within an epoch
+        checkpoints.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        latest_epoch, latest_batch, latest_filename, checkpoint_type = checkpoints[0]
+
+        latest_path = os.path.join(checkpoint_dir, latest_filename)
+
+        if checkpoint_type == 'intermediate':
+            print(f"🔍 Found latest checkpoint: intermediate at epoch {latest_epoch}, batch {latest_batch}")
+            print(f"   Path: {latest_path}")
+        else:
+            print(f"🔍 Found latest checkpoint: full epoch {latest_epoch}")
+            print(f"   Path: {latest_path}")
+
+        return latest_path
+
+    def cleanup_intermediate_checkpoints(self, epoch):
+        """
+        Remove all intermediate checkpoints for a specific epoch.
+
+        Args:
+            epoch: Epoch number whose intermediate checkpoints should be removed
+        """
+        # Pattern to match intermediate_epoch{N}_batch{M}.pth
+        pattern = re.compile(rf'^intermediate_epoch{epoch}_batch(\d+)\.pth$')
+
+        removed_count = 0
+        for filename in os.listdir(self.checkpoint_dir):
+            match = pattern.match(filename)
+            if match:
+                filepath = os.path.join(self.checkpoint_dir, filename)
+                try:
+                    os.remove(filepath)
+                    removed_count += 1
+                except Exception as e:
+                    print(f"⚠️  Could not remove {filename}: {e}")
+
+        if removed_count > 0:
+            print(f"🗑️  Removed {removed_count} intermediate checkpoint(s) for epoch {epoch}")
 
     def cleanup_old_checkpoints(self, current_epoch, checkpoint_epochs):
         """
