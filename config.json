@@ -1,7 +1,7 @@
 {
   "progress_bar": {
     "enable_for_file_output": true,
-    "miniters": 50,
+    "miniters": 1,
     "mininterval": 30.0
   },
   "data_loader": {
