@@ -75,7 +75,7 @@ class Trainer:
         # Progress bar configuration
         self.progress_bar_config = progress_bar_config or {
             'enable_for_file_output': True,
-            'miniters': 50,
+            'miniters': 1,
             'mininterval': 30.0
         }
 
@@ -131,8 +131,10 @@ class Trainer:
             self.train_loader,
             desc=f"Epoch {epoch}",
             disable=not self.progress_bar_config.get('enable_for_file_output', True),
-            miniters=self.progress_bar_config.get('miniters', 50),
-            mininterval=self.progress_bar_config.get('mininterval', 30.0)
+            miniters=self.progress_bar_config.get('miniters', 1),
+            mininterval=self.progress_bar_config.get('mininterval', 30.0),
+            total=total_batches,
+            initial=start_batch_idx
         )
         correct = 0
         processed = 0
@@ -141,6 +143,7 @@ class Trainer:
         for batch_idx, (data, target) in enumerate(pbar):
             # Skip batches if resuming mid-epoch
             if batch_idx < start_batch_idx:
+                pbar.update(1)
                 continue
             data, target = data.to(self.device), target.to(self.device)
             self.optimizer.zero_grad()
@@ -217,6 +220,7 @@ class Trainer:
                     self.model, self.optimizer, self.scheduler, epoch, metrics,
                     self.config, self.metrics_tracker, self.scaler, batch_idx=batch_idx
                 )
+                pbar.refresh()  # Force display update after saving checkpoint
 
         avg_loss = epoch_loss / len(self.train_loader)
         accuracy = 100. * correct / processed
