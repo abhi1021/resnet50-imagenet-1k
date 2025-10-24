@@ -1,44 +1,42 @@
+#!/bin/bash
+# Update and install required packages
+sudo apt update -y
+sudo apt install micro gpustat -y
 
-# lsblk
-# Use above command and find correct mount type eg: below one was /dev/nvme2n1
-
-# Create mount point and mount
+# Create mount point
 sudo mkdir -p /mnt/imagenet
-sudo mount /dev/nvme2n1 /mnt/imagenet
 
-# Set ownership to ubuntu user
+# Retry mounting the EBS volume up to 5 times with 10-second delay
+max_attempts=5
+attempt=1
+while [ $attempt -le $max_attempts ]; do
+    echo "Attempt $attempt: Trying to mount /dev/nvme2n1..."
+    sudo mount /dev/nvme2n1 /mnt/imagenet && break
+    echo "Mount failed, retrying in 10 seconds..."
+    sleep 10
+    attempt=$((attempt + 1))
+done
+
+# Final check
+if mountpoint -q /mnt/imagenet; then
+    echo "Mount successful!"
+else
+    echo "Mount failed after $max_attempts attempts. Exiting."
+    exit 1
+fi
+
+# Set correct ownership
 sudo chown ubuntu:ubuntu /mnt/imagenet
 
-cd /mnt/imagenet
+# Optional: activate environment if mount successful
+if [ -f /mnt/imagenet/venv/bin/activate ]; then
+    source /mnt/imagenet/venv/bin/activate
+fi
 
-#activate the source
-source venv/bin/activate
+# Auto-activate environment on future logins
+sudo bash -c 'echo "if [ -f /mnt/imagenet/venv/bin/activate ]; then" >> /home/ubuntu/.bashrc'
+sudo bash -c 'echo "    source /mnt/imagenet/venv/bin/activate" >> /home/ubuntu/.bashrc'
+sudo bash -c 'echo "fi" >> /home/ubuntu/.bashrc'
 
-cd resnet50-imagenet-1k
-
-## start the training
-#python train.py \
-#--model resnet50-pytorch \
-#--dataset imagenet-1k \
-#--data-dir /mnt/imagenet/dataset \
-#--epochs 90 \
-#--batch-size 170 \
-#--scheduler onecycle \
-#--lr-finder \
-#--resume-from ./checkpoint_1 \
-#--hf-repo pandurangpatil/imagenet1k >> console.log  &
-#cd /mnt/imagenet
-#source venv/bin/activate
-#cd resnet50-imagenet-1k
-
-# Start the training, refer to the command in the message. Here it's for reference only
-nohup python train.py --model resnet50-pytorch --dataset imagenet-1k --data-dir /mnt/imagenet/dataset --epochs 100 --batch-size 256 --scheduler onecycle --lr-finder --resume-from ./checkpoint_3 --hf-token <hf token> --hf-repo <hf repo> >> console-3.log  2>&1 &
-
-# watch GPU usage
-watch -n 0.01 nvidia-smi
-
-# monitor CPU and memory usage
-htop
-
-# To check the progress of the training, the console output is redirected to the console-3.log file.
-tail -f console-3.log 
+# Ensure .bashrc ownership
+sudo chown ubuntu:ubuntu /home/ubuntu/.bashrc
