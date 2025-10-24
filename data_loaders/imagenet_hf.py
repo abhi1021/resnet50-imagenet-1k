@@ -3,8 +3,13 @@ ImageNet-1K dataset using HuggingFace datasets library.
 """
 from datasets import load_dataset
 from PIL import Image
+import logging
+import traceback
 from .base import BaseDataset
 from .transforms import get_imagenet_transforms
+
+# Get logger for this module
+logger = logging.getLogger(__name__)
 
 
 class ImageNet1KDataset(BaseDataset):
@@ -87,20 +92,47 @@ class ImageNet1KDataset(BaseDataset):
         Returns:
             tuple: (image_tensor, label)
         """
-        # HuggingFace dataset returns dict with 'image' (PIL.Image) and 'label' (int)
-        sample = self.dataset[idx]
-        image = sample['image']
-        label = sample['label']
+        try:
+            # HuggingFace dataset returns dict with 'image' (PIL.Image) and 'label' (int)
+            sample = self.dataset[idx]
+            image = sample['image']
+            label = sample['label']
 
-        # Convert grayscale to RGB if needed
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
+            # Convert grayscale to RGB if needed
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
 
-        # Apply transforms
-        if self.transform is not None:
-            image = self.transform(image)
+            # Apply transforms
+            if self.transform is not None:
+                image = self.transform(image)
 
-        return image, label
+            return image, label
+
+        except Exception as e:
+            logger.error(f"="*70)
+            logger.error(f"ERROR loading sample at index {idx}")
+            logger.error(f"Dataset: ImageNet-1K, Split: {'train' if self.train else 'validation'}")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error message: {str(e)}")
+
+            # Try to get additional information about the sample
+            try:
+                sample_info = self.dataset[idx]
+                logger.error(f"Sample info: {sample_info.keys() if hasattr(sample_info, 'keys') else 'N/A'}")
+                if 'image' in sample_info:
+                    img = sample_info['image']
+                    logger.error(f"Image mode: {img.mode if hasattr(img, 'mode') else 'N/A'}")
+                    logger.error(f"Image size: {img.size if hasattr(img, 'size') else 'N/A'}")
+                if 'label' in sample_info:
+                    logger.error(f"Label: {sample_info['label']}")
+            except Exception as info_err:
+                logger.error(f"Could not retrieve sample info: {info_err}")
+
+            logger.error(f"Stack trace:\n{traceback.format_exc()}")
+            logger.error(f"="*70)
+
+            # Re-raise the exception so training stops
+            raise RuntimeError(f"Failed to load sample at index {idx} from ImageNet-1K dataset") from e
 
     def get_transforms(self, augmentation='strong'):
         """
