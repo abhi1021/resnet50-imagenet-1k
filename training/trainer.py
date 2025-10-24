@@ -7,6 +7,7 @@ from torch.amp import autocast
 from torch.cuda.amp import GradScaler
 from tqdm import tqdm
 import numpy as np
+import itertools
 from torchvision import datasets
 
 from utils import CheckpointManager, MetricsTracker, plot_training_curves, get_device
@@ -138,10 +139,16 @@ class Trainer:
         processed = 0
         epoch_loss = 0
 
-        for batch_idx, (data, target) in enumerate(pbar):
-            # Skip batches if resuming mid-epoch
-            if batch_idx < start_batch_idx:
-                continue
+        # Create iterator and skip batches if resuming mid-epoch
+        data_iter = iter(pbar)
+        if start_batch_idx > 0:
+            print(f"⏭️  Skipping first {start_batch_idx} batches (resuming mid-epoch)...")
+            # Efficiently skip batches without processing them
+            for _ in itertools.islice(data_iter, start_batch_idx):
+                pass
+            print(f"✓ Skipped {start_batch_idx} batches, resuming training...")
+
+        for batch_idx, (data, target) in enumerate(data_iter, start=start_batch_idx):
             data, target = data.to(self.device), target.to(self.device)
             self.optimizer.zero_grad()
 
