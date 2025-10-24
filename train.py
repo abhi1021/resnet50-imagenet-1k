@@ -432,6 +432,14 @@ def main():
         device = get_device(args.device)
         logger.info(f"Using device: {device}")
         log_memory_usage(logger, device, "Initial")
+    except Exception as e:
+        logger.error("="*70)
+        logger.error("FATAL ERROR: Failed to initialize device")
+        logger.error("="*70)
+        logger.error(f"Error: {str(e)}")
+        logger.error(f"Stack trace:\n{traceback.format_exc()}")
+        logger.error("="*70)
+        raise
 
     # Get dataset info
     dataset_info = get_dataset_info(args.dataset, num_classes=args.num_classes)
