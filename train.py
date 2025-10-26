@@ -413,9 +413,24 @@ def main():
     model = get_model(args.model, num_classes=dataset_info['num_classes'])
     print(f"✓ Model created\n")
 
+    # Get optimizer config from file
+    optimizer_config = config_data.get('optimizer', {})
+    initial_lr = optimizer_config.get('initial_lr', 0.01)
+    momentum = optimizer_config.get('momentum', 0.9)
+    weight_decay = optimizer_config.get('weight_decay', 1e-3)
+
     # Create optimizer
-    optimizer = get_optimizer(args.optimizer, model)
-    print(f"✓ Optimizer: {args.optimizer}\n")
+    optimizer = get_optimizer(
+        args.optimizer,
+        model,
+        lr=initial_lr,
+        momentum=momentum,
+        weight_decay=weight_decay
+    )
+    print(f"✓ Optimizer: {args.optimizer}")
+    print(f"  Initial LR: {initial_lr}")
+    print(f"  Momentum: {momentum}")
+    print(f"  Weight Decay: {weight_decay}\n")
 
     # Get scheduler config from file
     scheduler_config = None

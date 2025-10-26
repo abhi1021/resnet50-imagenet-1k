@@ -1,4 +1,9 @@
 {
+  "optimizer": {
+    "initial_lr": 0.05,
+    "momentum": 0.9,
+    "weight_decay": 0.0001
+  },
   "progress_bar": {
     "enable_for_file_output": true,
     "miniters": 50,
@@ -24,9 +29,9 @@
       "three_phase": false
     },
     "cosine": {
-      "T_0": 25,
+      "T_0": 30,
       "T_mult": 1,
-      "eta_min": 1e-4
+      "eta_min": 0.00001
     }
   },
   "progress_bar_description": {
