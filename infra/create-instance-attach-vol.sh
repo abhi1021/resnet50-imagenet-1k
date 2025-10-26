@@ -1,5 +1,5 @@
 # --- Required variables ---
-AMI_ID="ami-082cfdbb3062d6871"        # Replace with your AMI or custom AMI ID
+AMI_ID="ami-0cc0caf8555831ce4"        # Replace with your AMI or custom AMI ID
 KEY_NAME="erav4"               # Replace with your EC2 keypair
 SG_ID="sg-256f3f6e"          # Replace with your security group
 IAM_ROLE="erav4-ec2-role"  # Replace with your IAM instance profile
