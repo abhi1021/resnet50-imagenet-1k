@@ -7,7 +7,12 @@ import torch
 import numpy as np
 import json
 import os
+import logging
+import traceback
 from tqdm import tqdm
+
+# Get logger for this module
+logger = logging.getLogger(__name__)
 
 
 class LRFinder:
@@ -101,45 +106,66 @@ class LRFinder:
             )
 
             for batch_idx, (data, target) in enumerate(pbar):
-                data, target = data.to(self.device), target.to(self.device)
+                try:
+                    data, target = data.to(self.device), target.to(self.device)
 
-                # Forward pass (no mixup, no label smoothing)
-                self.optimizer.zero_grad()
-                outputs = self.model(data)
-                loss = self.criterion(outputs, target)
+                    # Forward pass (no mixup, no label smoothing)
+                    self.optimizer.zero_grad()
+                    outputs = self.model(data)
+                    loss = self.criterion(outputs, target)
 
-                # Track smoothed loss
-                if iteration == 0:
-                    smoothed_loss = loss.item()
-                else:
-                    smoothed_loss = smoothing * loss.item() + (1 - smoothing) * smoothed_loss
+                    # Track smoothed loss
+                    if iteration == 0:
+                        smoothed_loss = loss.item()
+                    else:
+                        smoothed_loss = smoothing * loss.item() + (1 - smoothing) * smoothed_loss
 
-                # Check for divergence
-                if smoothed_loss > 4 * self.best_loss or torch.isnan(loss):
-                    print(f"\n⚠ Loss diverging (current: {smoothed_loss:.4f}, best: {self.best_loss:.4f})")
-                    print("Stopping LR range test early")
-                    break
+                    # Check for divergence
+                    if smoothed_loss > 4 * self.best_loss or torch.isnan(loss):
+                        print(f"\n⚠ Loss diverging (current: {smoothed_loss:.4f}, best: {self.best_loss:.4f})")
+                        print("Stopping LR range test early")
+                        logger.warning(f"LR Finder stopped early due to loss divergence at iteration {iteration}")
+                        break
 
-                # Update best loss
-                if smoothed_loss < self.best_loss:
-                    self.best_loss = smoothed_loss
+                    # Update best loss
+                    if smoothed_loss < self.best_loss:
+                        self.best_loss = smoothed_loss
 
-                # Store LR and loss
-                current_lr = self.optimizer.param_groups[0]['lr']
-                self.lrs.append(current_lr)
-                self.losses.append(smoothed_loss)
+                    # Store LR and loss
+                    current_lr = self.optimizer.param_groups[0]['lr']
+                    self.lrs.append(current_lr)
+                    self.losses.append(smoothed_loss)
 
-                # Backward pass
-                loss.backward()
-                self.optimizer.step()
+                    # Backward pass
+                    loss.backward()
+                    self.optimizer.step()
 
-                # Update learning rate
-                iteration += 1
-                new_lr = start_lr * lr_lambda(iteration)
-                for param_group in self.optimizer.param_groups:
-                    param_group['lr'] = new_lr
+                    # Update learning rate
+                    iteration += 1
+                    new_lr = start_lr * lr_lambda(iteration)
+                    for param_group in self.optimizer.param_groups:
+                        param_group['lr'] = new_lr
 
-                pbar.set_postfix({'lr': f'{current_lr:.2e}', 'loss': f'{smoothed_loss:.4f}'})
+                    pbar.set_postfix({'lr': f'{current_lr:.2e}', 'loss': f'{smoothed_loss:.4f}'})
+
+                except Exception as e:
+                    logger.error(f"="*70)
+                    logger.error(f"ERROR in LR Finder at epoch {epoch+1}, batch {batch_idx}")
+                    logger.error(f"Current LR: {self.optimizer.param_groups[0]['lr']:.2e}")
+                    logger.error(f"Iteration: {iteration}")
+                    logger.error(f"Error type: {type(e).__name__}")
+                    logger.error(f"Error message: {str(e)}")
+                    logger.error(f"Stack trace:\n{traceback.format_exc()}")
+                    logger.error(f"="*70)
+                    # Try to restore initial state before re-raising
+                    if self.initial_model_state:
+                        logger.error("Restoring initial model state before exiting...")
+                        try:
+                            self.model.load_state_dict(self.initial_model_state)
+                            self.optimizer.load_state_dict(self.initial_optimizer_state)
+                        except Exception as restore_err:
+                            logger.error(f"Failed to restore initial state: {restore_err}")
+                    raise
 
             # Early stopping if loss diverged
             if smoothed_loss > 4 * self.best_loss or torch.isnan(loss):

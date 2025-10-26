@@ -8,6 +8,9 @@ Example usage:
 import argparse
 import json
 import os
+import sys
+import traceback
+import logging
 import torch
 import torch.utils.data
 import matplotlib.pyplot as plt
@@ -18,6 +21,76 @@ from data_loaders import get_dataset, get_dataset_info
 from models import get_model
 from training import get_optimizer, get_scheduler, Trainer
 from utils import get_device, CheckpointManager, MetricsTracker, HuggingFaceUploader
+
+
+def setup_logging(log_file='training.log'):
+    """
+    Setup logging configuration to capture all errors with stack traces.
+
+    Args:
+        log_file: Path to log file
+    """
+    # Create formatter with detailed information
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s\n'
+        '%(pathname)s:%(lineno)d in %(funcName)s()\n'
+    )
+
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+
+    # File handler with all details
+    file_handler = logging.FileHandler(log_file, mode='a')
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+
+    # Root logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+
+    return logger
+
+
+def log_system_info(logger):
+    """Log system and CUDA information for debugging."""
+    logger.info("="*70)
+    logger.info("SYSTEM INFORMATION")
+    logger.info("="*70)
+    logger.info(f"Python version: {sys.version}")
+    logger.info(f"PyTorch version: {torch.__version__}")
+    logger.info(f"CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        logger.info(f"CUDA version: {torch.version.cuda}")
+        logger.info(f"Number of GPUs: {torch.cuda.device_count()}")
+        for i in range(torch.cuda.device_count()):
+            logger.info(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+            logger.info(f"  Memory Total: {torch.cuda.get_device_properties(i).total_memory / 1e9:.2f} GB")
+    logger.info("="*70)
+
+
+def log_memory_usage(logger, device, context=""):
+    """
+    Log current memory usage for debugging OOM issues.
+
+    Args:
+        logger: Logger instance
+        device: torch device
+        context: Description of where this is being called from
+    """
+    try:
+        if device.type == 'cuda':
+            allocated = torch.cuda.memory_allocated(device) / 1e9
+            reserved = torch.cuda.memory_reserved(device) / 1e9
+            logger.info(f"[{context}] CUDA Memory - Allocated: {allocated:.2f} GB, Reserved: {reserved:.2f} GB")
+        elif device.type == 'mps':
+            allocated = torch.mps.current_allocated_memory() / 1e9
+            logger.info(f"[{context}] MPS Memory - Allocated: {allocated:.2f} GB")
+    except Exception as e:
+        logger.warning(f"Could not log memory usage: {e}")
 
 
 def load_config_file(config_path='./config.json'):
@@ -126,6 +199,15 @@ def visualize_batch(data_loader, dataset, dataset_name, mean=(0.485, 0.456, 0.40
 
 
 def main():
+    # Setup logging first
+    logger = setup_logging('training.log')
+    logger.info("="*70)
+    logger.info("STARTING TRAINING SESSION")
+    logger.info("="*70)
+
+    # Log system information
+    log_system_info(logger)
+
     parser = argparse.ArgumentParser(description='Train image classification model')
 
     # Model and dataset
@@ -346,7 +428,18 @@ def main():
     print("="*70 + "\n")
 
     # Get device
-    device = get_device(args.device)
+    try:
+        device = get_device(args.device)
+        logger.info(f"Using device: {device}")
+        log_memory_usage(logger, device, "Initial")
+    except Exception as e:
+        logger.error("="*70)
+        logger.error("FATAL ERROR: Failed to initialize device")
+        logger.error("="*70)
+        logger.error(f"Error: {str(e)}")
+        logger.error(f"Stack trace:\n{traceback.format_exc()}")
+        logger.error("="*70)
+        raise
 
     # Get dataset info
     dataset_info = get_dataset_info(args.dataset, num_classes=args.num_classes)
@@ -357,22 +450,33 @@ def main():
 
     # Load datasets
     print("Loading datasets...")
-    train_dataset = get_dataset(
-        args.dataset,
-        train=True,
-        data_dir=args.data_dir,
-        augmentation=args.augmentation,
-        num_classes=args.num_classes,
-        hf_token=args.hf_token
-    )
-    test_dataset = get_dataset(
-        args.dataset,
-        train=False,
-        data_dir=args.data_dir,
-        augmentation='none',
-        num_classes=args.num_classes,
-        hf_token=args.hf_token
-    )
+    logger.info("Loading datasets...")
+    try:
+        train_dataset = get_dataset(
+            args.dataset,
+            train=True,
+            data_dir=args.data_dir,
+            augmentation=args.augmentation,
+            num_classes=args.num_classes,
+            hf_token=args.hf_token
+        )
+        test_dataset = get_dataset(
+            args.dataset,
+            train=False,
+            data_dir=args.data_dir,
+            augmentation='none',
+            num_classes=args.num_classes,
+            hf_token=args.hf_token
+        )
+        logger.info(f"Successfully loaded datasets: train={len(train_dataset)}, test={len(test_dataset)}")
+    except Exception as e:
+        logger.error("="*70)
+        logger.error("FATAL ERROR: Failed to load datasets")
+        logger.error("="*70)
+        logger.error(f"Error: {str(e)}")
+        logger.error(f"Stack trace:\n{traceback.format_exc()}")
+        logger.error("="*70)
+        raise
 
     # Create data loaders
     use_pin_memory = device.type == 'cuda'
@@ -627,10 +731,13 @@ def main():
     print("\n" + "="*70)
     if start_batch_idx > 0:
         print(f"RESUMING TRAINING FROM EPOCH {start_epoch}, BATCH {start_batch_idx}")
+        logger.info(f"RESUMING TRAINING FROM EPOCH {start_epoch}, BATCH {start_batch_idx}")
     elif start_epoch > 1:
         print(f"RESUMING TRAINING FROM EPOCH {start_epoch}")
+        logger.info(f"RESUMING TRAINING FROM EPOCH {start_epoch}")
     else:
         print("STARTING TRAINING")
+        logger.info("STARTING TRAINING")
     print("="*70 + "\n")
 
     # Determine target accuracy for early stopping
@@ -638,13 +745,70 @@ def main():
     if args.enable_target_early_stopping and args.target_accuracy:
         target_accuracy = args.target_accuracy
 
-    best_accuracy = trainer.run(
-        epochs=args.epochs,
-        patience=15,
-        target_accuracy=target_accuracy,
-        start_epoch=start_epoch,
-        start_batch_idx=start_batch_idx
-    )
+    try:
+        logger.info(f"Starting training run: epochs={args.epochs}, start_epoch={start_epoch}, start_batch_idx={start_batch_idx}")
+        log_memory_usage(logger, device, "Before training")
+
+        best_accuracy = trainer.run(
+            epochs=args.epochs,
+            patience=15,
+            target_accuracy=target_accuracy,
+            start_epoch=start_epoch,
+            start_batch_idx=start_batch_idx
+        )
+
+        logger.info(f"Training completed successfully. Best accuracy: {best_accuracy:.2f}%")
+    except KeyboardInterrupt:
+        logger.warning("="*70)
+        logger.warning("TRAINING INTERRUPTED BY USER (Ctrl+C)")
+        logger.warning("="*70)
+        logger.warning("Attempting to save current state...")
+        try:
+            # Try to save emergency checkpoint
+            metrics = {
+                'train_acc': 0.0,
+                'test_acc': 0.0,
+                'train_loss': 0.0,
+                'test_loss': 0.0
+            }
+            checkpoint_manager.save_training_state(
+                trainer.model, trainer.optimizer, trainer.scheduler,
+                start_epoch, metrics, training_config, trainer.metrics_tracker, trainer.scaler
+            )
+            logger.warning("Emergency checkpoint saved successfully")
+        except Exception as save_err:
+            logger.error(f"Failed to save emergency checkpoint: {save_err}")
+            logger.error(f"Stack trace:\n{traceback.format_exc()}")
+        raise
+    except Exception as e:
+        logger.error("="*70)
+        logger.error("FATAL ERROR DURING TRAINING")
+        logger.error("="*70)
+        logger.error(f"Error occurred at: epoch={start_epoch}, batch={start_batch_idx}")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.error(f"Full stack trace:\n{traceback.format_exc()}")
+        log_memory_usage(logger, device, "At error")
+        logger.error("="*70)
+
+        # Try to save emergency checkpoint before crashing
+        try:
+            logger.error("Attempting to save emergency checkpoint...")
+            metrics = {
+                'train_acc': 0.0,
+                'test_acc': 0.0,
+                'train_loss': 0.0,
+                'test_loss': 0.0
+            }
+            checkpoint_manager.save_training_state(
+                trainer.model, trainer.optimizer, trainer.scheduler,
+                start_epoch, metrics, training_config, trainer.metrics_tracker, trainer.scaler
+            )
+            logger.error("Emergency checkpoint saved successfully")
+        except Exception as save_err:
+            logger.error(f"Failed to save emergency checkpoint: {save_err}")
+            logger.error(f"Stack trace:\n{traceback.format_exc()}")
+        raise
 
     # Save results
     trainer.save_results()
@@ -662,4 +826,16 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        # Final catch-all for any uncaught exceptions
+        print("\n" + "="*70)
+        print("FATAL UNHANDLED EXCEPTION")
+        print("="*70)
+        print(f"Exception type: {type(e).__name__}")
+        print(f"Exception message: {str(e)}")
+        print("\nFull stack trace:")
+        print(traceback.format_exc())
+        print("="*70)
+        sys.exit(1)

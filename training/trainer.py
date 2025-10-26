@@ -8,11 +8,16 @@ from torch.cuda.amp import GradScaler
 from tqdm import tqdm
 import numpy as np
 import itertools
+import logging
+import traceback
 from torchvision import datasets
 
 from utils import CheckpointManager, MetricsTracker, plot_training_curves, get_device
 from utils import HuggingFaceUploader, create_model_card, plot_lr_finder
 from .lr_finder import LRFinder
+
+# Get logger for this module
+logger = logging.getLogger(__name__)
 
 
 class Trainer:
@@ -149,12 +154,53 @@ class Trainer:
             print(f"✓ Skipped {start_batch_idx} batches, resuming training...")
 
         for batch_idx, (data, target) in enumerate(data_iter, start=start_batch_idx):
-            data, target = data.to(self.device), target.to(self.device)
-            self.optimizer.zero_grad()
+            try:
+                # Log memory usage periodically
+                if batch_idx % 100 == 0 and self.device.type == 'cuda':
+                    allocated = torch.cuda.memory_allocated(self.device) / 1e9
+                    reserved = torch.cuda.memory_reserved(self.device) / 1e9
+                    logger.debug(f"Epoch {epoch}, Batch {batch_idx}: CUDA Memory - Allocated: {allocated:.2f}GB, Reserved: {reserved:.2f}GB")
 
-            # Mixed precision training
-            if self.use_amp:
-                with autocast(device_type=self.device.type):
+                data, target = data.to(self.device), target.to(self.device)
+                self.optimizer.zero_grad()
+
+            except Exception as e:
+                logger.error(f"="*70)
+                logger.error(f"ERROR in train_epoch at batch {batch_idx}/{len(self.train_loader)}")
+                logger.error(f"Epoch: {epoch}")
+                logger.error(f"Error during data loading or device transfer")
+                logger.error(f"Error type: {type(e).__name__}")
+                logger.error(f"Error message: {str(e)}")
+                logger.error(f"Stack trace:\n{traceback.format_exc()}")
+                logger.error(f"="*70)
+                raise
+
+            try:
+                # Mixed precision training
+                if self.use_amp:
+                    with autocast(device_type=self.device.type):
+                        if self.use_mixup:
+                            inputs, targets_a, targets_b, lam = self.mixup_data(
+                                data, target, alpha=self.mixup_alpha
+                            )
+                            outputs = self.model(inputs)
+                            loss = lam * F.cross_entropy(outputs, targets_a, label_smoothing=self.label_smoothing) + \
+                                   (1 - lam) * F.cross_entropy(outputs, targets_b, label_smoothing=self.label_smoothing)
+                        else:
+                            outputs = self.model(data)
+                            loss = F.cross_entropy(outputs, target, label_smoothing=self.label_smoothing)
+
+                    # Backward pass with gradient scaling
+                    self.scaler.scale(loss).backward()
+
+                    # Gradient clipping
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.gradient_clip)
+
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    # Standard training without AMP
                     if self.use_mixup:
                         inputs, targets_a, targets_b, lam = self.mixup_data(
                             data, target, alpha=self.mixup_alpha
@@ -166,31 +212,43 @@ class Trainer:
                         outputs = self.model(data)
                         loss = F.cross_entropy(outputs, target, label_smoothing=self.label_smoothing)
 
-                # Backward pass with gradient scaling
-                self.scaler.scale(loss).backward()
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.gradient_clip)
+                    self.optimizer.step()
 
-                # Gradient clipping
-                self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.gradient_clip)
+            except RuntimeError as e:
+                logger.error(f"="*70)
+                logger.error(f"RUNTIME ERROR in train_epoch at batch {batch_idx}/{len(self.train_loader)}")
+                logger.error(f"Epoch: {epoch}")
+                logger.error(f"Error type: {type(e).__name__}")
+                logger.error(f"Error message: {str(e)}")
 
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-            else:
-                # Standard training without AMP
-                if self.use_mixup:
-                    inputs, targets_a, targets_b, lam = self.mixup_data(
-                        data, target, alpha=self.mixup_alpha
-                    )
-                    outputs = self.model(inputs)
-                    loss = lam * F.cross_entropy(outputs, targets_a, label_smoothing=self.label_smoothing) + \
-                           (1 - lam) * F.cross_entropy(outputs, targets_b, label_smoothing=self.label_smoothing)
-                else:
-                    outputs = self.model(data)
-                    loss = F.cross_entropy(outputs, target, label_smoothing=self.label_smoothing)
+                # Log CUDA memory if available
+                if self.device.type == 'cuda':
+                    try:
+                        allocated = torch.cuda.memory_allocated(self.device) / 1e9
+                        reserved = torch.cuda.memory_reserved(self.device) / 1e9
+                        max_allocated = torch.cuda.max_memory_allocated(self.device) / 1e9
+                        logger.error(f"CUDA Memory at error:")
+                        logger.error(f"  Allocated: {allocated:.2f} GB")
+                        logger.error(f"  Reserved: {reserved:.2f} GB")
+                        logger.error(f"  Max Allocated: {max_allocated:.2f} GB")
+                    except Exception as mem_err:
+                        logger.error(f"Could not get CUDA memory info: {mem_err}")
 
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.gradient_clip)
-                self.optimizer.step()
+                logger.error(f"Stack trace:\n{traceback.format_exc()}")
+                logger.error(f"="*70)
+                raise
+            except Exception as e:
+                logger.error(f"="*70)
+                logger.error(f"UNEXPECTED ERROR in train_epoch at batch {batch_idx}/{len(self.train_loader)}")
+                logger.error(f"Epoch: {epoch}")
+                logger.error(f"Current loss value: {loss.item() if 'loss' in locals() else 'N/A'}")
+                logger.error(f"Error type: {type(e).__name__}")
+                logger.error(f"Error message: {str(e)}")
+                logger.error(f"Stack trace:\n{traceback.format_exc()}")
+                logger.error(f"="*70)
+                raise
 
             # Update learning rate for OneCycleLR (per batch)
             if self.scheduler_type == 'onecycle':
@@ -246,26 +304,46 @@ class Trainer:
         Returns:
             tuple: (test_loss, accuracy)
         """
-        self.model.eval()
-        test_loss = 0
-        correct = 0
+        try:
+            self.model.eval()
+            test_loss = 0
+            correct = 0
 
-        with torch.no_grad():
-            for data, target in self.test_loader:
-                data, target = data.to(self.device), target.to(self.device)
-                output = self.model(data)
-                test_loss += F.cross_entropy(output, target, reduction='sum').item()
-                pred = output.argmax(dim=1, keepdim=True)
-                correct += pred.eq(target.view_as(pred)).sum().item()
+            with torch.no_grad():
+                for batch_idx, (data, target) in enumerate(self.test_loader):
+                    try:
+                        data, target = data.to(self.device), target.to(self.device)
+                        output = self.model(data)
+                        test_loss += F.cross_entropy(output, target, reduction='sum').item()
+                        pred = output.argmax(dim=1, keepdim=True)
+                        correct += pred.eq(target.view_as(pred)).sum().item()
+                    except Exception as e:
+                        logger.error(f"="*70)
+                        logger.error(f"ERROR in test() at batch {batch_idx}/{len(self.test_loader)}")
+                        logger.error(f"Error type: {type(e).__name__}")
+                        logger.error(f"Error message: {str(e)}")
+                        logger.error(f"Stack trace:\n{traceback.format_exc()}")
+                        logger.error(f"="*70)
+                        raise
 
-        test_loss /= len(self.test_loader.dataset)
-        acc = 100. * correct / len(self.test_loader.dataset)
+            test_loss /= len(self.test_loader.dataset)
+            acc = 100. * correct / len(self.test_loader.dataset)
 
-        print(
-            f"\nTest set: Average loss: {test_loss:.4f}, "
-            f"Accuracy: {correct}/{len(self.test_loader.dataset)} ({acc:.2f}%)\n"
-        )
-        return test_loss, acc
+            print(
+                f"\nTest set: Average loss: {test_loss:.4f}, "
+                f"Accuracy: {correct}/{len(self.test_loader.dataset)} ({acc:.2f}%)\n"
+            )
+            logger.info(f"Test completed: loss={test_loss:.4f}, accuracy={acc:.2f}%")
+            return test_loss, acc
+
+        except Exception as e:
+            logger.error(f"="*70)
+            logger.error(f"FATAL ERROR in test() method")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error message: {str(e)}")
+            logger.error(f"Stack trace:\n{traceback.format_exc()}")
+            logger.error(f"="*70)
+            raise
 
     def resume_from_checkpoint(self, checkpoint_path):
         """
@@ -400,10 +478,61 @@ class Trainer:
             print(f"✓ Saved initial config: {config_path}\n")
 
         for epoch in range(start_epoch, epochs + 1):
-            # Use start_batch_idx only for the first epoch when resuming from intermediate checkpoint
-            batch_idx_for_epoch = start_batch_idx if epoch == start_epoch else 0
-            train_loss, train_acc = self.train_epoch(epoch, start_batch_idx=batch_idx_for_epoch)
-            test_loss, test_acc = self.test()
+            try:
+                logger.info(f"="*70)
+                logger.info(f"Starting Epoch {epoch}/{epochs}")
+                logger.info(f"="*70)
+
+                # Use start_batch_idx only for the first epoch when resuming from intermediate checkpoint
+                batch_idx_for_epoch = start_batch_idx if epoch == start_epoch else 0
+                train_loss, train_acc = self.train_epoch(epoch, start_batch_idx=batch_idx_for_epoch)
+
+                logger.info(f"Epoch {epoch} training completed: loss={train_loss:.4f}, accuracy={train_acc:.2f}%")
+
+                test_loss, test_acc = self.test()
+
+            except Exception as e:
+                logger.error(f"="*70)
+                logger.error(f"FATAL ERROR during epoch {epoch}")
+                logger.error(f"="*70)
+                logger.error(f"Error type: {type(e).__name__}")
+                logger.error(f"Error message: {str(e)}")
+                logger.error(f"Stack trace:\n{traceback.format_exc()}")
+
+                # Log memory state
+                if self.device.type == 'cuda':
+                    try:
+                        allocated = torch.cuda.memory_allocated(self.device) / 1e9
+                        reserved = torch.cuda.memory_reserved(self.device) / 1e9
+                        max_allocated = torch.cuda.max_memory_allocated(self.device) / 1e9
+                        logger.error(f"CUDA Memory state at crash:")
+                        logger.error(f"  Allocated: {allocated:.2f} GB")
+                        logger.error(f"  Reserved: {reserved:.2f} GB")
+                        logger.error(f"  Max Allocated: {max_allocated:.2f} GB")
+                    except Exception as mem_err:
+                        logger.error(f"Could not get CUDA memory info: {mem_err}")
+
+                logger.error(f"="*70)
+
+                # Try to save emergency checkpoint
+                try:
+                    logger.error("Attempting to save emergency checkpoint...")
+                    metrics = {
+                        'train_acc': train_acc if 'train_acc' in locals() else 0.0,
+                        'test_acc': test_acc if 'test_acc' in locals() else 0.0,
+                        'train_loss': train_loss if 'train_loss' in locals() else 0.0,
+                        'test_loss': test_loss if 'test_loss' in locals() else 0.0
+                    }
+                    self.checkpoint_manager.save_training_state(
+                        self.model, self.optimizer, self.scheduler, epoch, metrics,
+                        self.config, self.metrics_tracker, self.scaler
+                    )
+                    logger.error("Emergency checkpoint saved successfully")
+                except Exception as save_err:
+                    logger.error(f"Failed to save emergency checkpoint: {save_err}")
+                    logger.error(f"Stack trace:\n{traceback.format_exc()}")
+
+                raise
 
             # Step scheduler after epoch for CosineAnnealing (OneCycle steps per batch)
             if self.scheduler_type == 'cosine':

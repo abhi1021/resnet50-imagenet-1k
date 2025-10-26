@@ -5,7 +5,12 @@ import os
 import re
 import torch
 import numpy as np
+import logging
+import traceback
 from datetime import datetime
+
+# Get logger for this module
+logger = logging.getLogger(__name__)
 
 
 class CheckpointManager:
@@ -89,26 +94,40 @@ class CheckpointManager:
 
         checkpoint_path = os.path.join(self.checkpoint_dir, filename)
 
-        checkpoint = {
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'train_accuracy': metrics.get('train_acc', 0.0),
-            'test_accuracy': metrics.get('test_acc', 0.0),
-            'train_loss': metrics.get('train_loss', 0.0),
-            'test_loss': metrics.get('test_loss', 0.0),
-            'timestamp': datetime.now().isoformat(),
-            'config': config
-        }
+        try:
+            checkpoint = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'train_accuracy': metrics.get('train_acc', 0.0),
+                'test_accuracy': metrics.get('test_acc', 0.0),
+                'train_loss': metrics.get('train_loss', 0.0),
+                'test_loss': metrics.get('test_loss', 0.0),
+                'timestamp': datetime.now().isoformat(),
+                'config': config
+            }
 
-        torch.save(checkpoint, checkpoint_path)
+            torch.save(checkpoint, checkpoint_path)
 
-        if is_best:
-            print(f"💾 Saved best model: {checkpoint_path}")
-        else:
-            print(f"💾 Saved checkpoint: {checkpoint_path}")
+            if is_best:
+                print(f"💾 Saved best model: {checkpoint_path}")
+                logger.info(f"Saved best model checkpoint: {checkpoint_path}")
+            else:
+                print(f"💾 Saved checkpoint: {checkpoint_path}")
+                logger.info(f"Saved checkpoint: {checkpoint_path}")
 
-        return checkpoint_path
+            return checkpoint_path
+
+        except Exception as e:
+            logger.error(f"="*70)
+            logger.error(f"ERROR saving checkpoint")
+            logger.error(f"Target path: {checkpoint_path}")
+            logger.error(f"Epoch: {epoch}")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error message: {str(e)}")
+            logger.error(f"Stack trace:\n{traceback.format_exc()}")
+            logger.error(f"="*70)
+            raise
 
     def load_checkpoint(self, filename='best_model.pth'):
         """
@@ -228,13 +247,36 @@ class CheckpointManager:
                 'best_epoch': metrics_tracker.best_epoch
             }
 
-        torch.save(checkpoint, checkpoint_path)
-        if batch_idx is not None:
-            print(f"💾 Saved intermediate checkpoint: {checkpoint_path} (batch {batch_idx})")
-        else:
-            print(f"💾 Saved training state: {checkpoint_path}")
+        try:
+            torch.save(checkpoint, checkpoint_path)
+            if batch_idx is not None:
+                print(f"💾 Saved intermediate checkpoint: {checkpoint_path} (batch {batch_idx})")
+                logger.info(f"Saved intermediate checkpoint: epoch {epoch}, batch {batch_idx}")
+            else:
+                print(f"💾 Saved training state: {checkpoint_path}")
+                logger.info(f"Saved training state: epoch {epoch}")
 
-        return checkpoint_path
+            return checkpoint_path
+
+        except Exception as e:
+            logger.error(f"="*70)
+            logger.error(f"ERROR saving training state")
+            logger.error(f"Target path: {checkpoint_path}")
+            logger.error(f"Epoch: {epoch}, Batch: {batch_idx if batch_idx is not None else 'N/A'}")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error message: {str(e)}")
+
+            # Check disk space
+            try:
+                import shutil
+                total, used, free = shutil.disk_usage(self.checkpoint_dir)
+                logger.error(f"Disk space - Total: {total / 1e9:.2f}GB, Used: {used / 1e9:.2f}GB, Free: {free / 1e9:.2f}GB")
+            except Exception as disk_err:
+                logger.error(f"Could not check disk space: {disk_err}")
+
+            logger.error(f"Stack trace:\n{traceback.format_exc()}")
+            logger.error(f"="*70)
+            raise
 
     def load_training_state(self, checkpoint_path):
         """
