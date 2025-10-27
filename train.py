@@ -146,6 +146,12 @@ def main():
     parser.add_argument('--device', type=str, default=None,
                        help='Device: cuda, cuda:0, mps, cpu (default: auto-detect)')
 
+    # Multi-GPU (uses DistributedDataParallel). Launch with torchrun/torch.distributed.launch.
+    parser.add_argument('--multi-gpu', action='store_true',
+                       help='Enable multi-process DistributedDataParallel (launch with torchrun).')
+    parser.add_argument('--sync-bn', action='store_true',
+                        help='Convert BatchNorm to SyncBatchNorm before wrapping with DDP')
+
     # Optimizer and scheduler
     parser.add_argument('--optimizer', type=str, default='sgd',
                        help='Optimizer: sgd, adam, adamw (default: sgd)')
@@ -355,6 +361,45 @@ def main():
     print(f"   Train samples: {dataset_info['train_samples']}")
     print(f"   Test samples: {dataset_info['test_samples']}\n")
 
+    # Distributed / multi-process initialization (torchrun sets WORLD_SIZE / RANK / LOCAL_RANK)
+    ddp_active = False
+    rank = 0
+    world_size = 1
+    local_rank = 0
+    is_main = True
+
+    # Consider DDP active if user passed --ddp or environment indicates multi-process run
+    try:
+        env_world_size = int(os.environ.get('WORLD_SIZE', '1'))
+    except Exception:
+        env_world_size = 1
+
+    if args.multi_gpu or env_world_size > 1:
+        ddp_active = True
+        # Initialize process group using environment variables (recommended with torchrun)
+        backend = 'nccl' if torch.cuda.is_available() else 'gloo'
+        try:
+            torch.distributed.init_process_group(backend=backend, init_method='env://')
+        except Exception:
+            # If already initialized, ignore
+            pass
+
+        rank = torch.distributed.get_rank()
+        world_size = torch.distributed.get_world_size()
+        try:
+            local_rank = int(os.environ.get('LOCAL_RANK', '0'))
+        except Exception:
+            local_rank = 0
+
+        is_main = (rank == 0)
+
+        # Set device per-process (assumes single-node multi-GPU)
+        if torch.cuda.is_available():
+            torch.cuda.set_device(local_rank)
+            device = torch.device(f'cuda:{local_rank}')
+
+    # Visibility: only main process prints a few high-level messages to avoid clutter
+
     # Load datasets
     print("Loading datasets...")
     train_dataset = get_dataset(
@@ -380,23 +425,53 @@ def main():
     # Get num_workers from config, default to 4 if not specified
     num_workers = config_data.get('data_loader', {}).get('num_workers', 4)
 
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=use_pin_memory
-    )
-    test_loader = torch.utils.data.DataLoader(
-        test_dataset,
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=use_pin_memory
-    )
-    print(f"✓ Train batches: {len(train_loader)}")
-    print(f"✓ Test batches: {len(test_loader)}")
-    print(f"✓ Data loader workers: {num_workers}\n")
+    # If using DDP, use DistributedSampler and per-process batch size
+    if ddp_active:
+        from torch.utils.data.distributed import DistributedSampler
+
+        per_proc_batch = max(1, int(args.batch_size) // max(1, int(world_size)))
+
+        train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True)
+        test_sampler = DistributedSampler(test_dataset, num_replicas=world_size, rank=rank, shuffle=False)
+
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset,
+            batch_size=per_proc_batch,
+            sampler=train_sampler,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=use_pin_memory,
+            drop_last=True
+        )
+
+        test_loader = torch.utils.data.DataLoader(
+            test_dataset,
+            batch_size=per_proc_batch,
+            sampler=test_sampler,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=use_pin_memory
+        )
+    else:
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=use_pin_memory
+        )
+        test_loader = torch.utils.data.DataLoader(
+            test_dataset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=use_pin_memory
+        )
+
+    if is_main:
+        print(f"✓ Train batches: {len(train_loader)}")
+        print(f"✓ Test batches: {len(test_loader)}")
+        print(f"✓ Data loader workers: {num_workers}\n")
 
     # Visualize samples if requested
     if args.visualize_samples:
@@ -411,7 +486,39 @@ def main():
     # Create model
     print(f"Creating model: {args.model}")
     model = get_model(args.model, num_classes=dataset_info['num_classes'])
-    print(f"✓ Model created\n")
+    # Multi-GPU / Distributed wrapping
+    if ddp_active:
+        # optionally convert BatchNorm to SyncBatchNorm
+        if args.sync_bn:
+            try:
+                model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+                if is_main:
+                    print("✓ Converted BatchNorm to SyncBatchNorm for DDP")
+            except Exception as e:
+                if is_main:
+                    print(f"⚠ Could not convert to SyncBatchNorm: {e}")
+
+        # Move model to device first and wrap with DistributedDataParallel
+        model.to(device)
+        try:
+            model = torch.nn.parallel.DistributedDataParallel(
+                model,
+                device_ids=[local_rank] if torch.cuda.is_available() else None,
+                output_device=local_rank if torch.cuda.is_available() else None,
+                find_unused_parameters=False
+            )
+            if is_main:
+                print(f"✓ Wrapped model with DistributedDataParallel (rank {rank}/{world_size})\n")
+        except Exception as e:
+            if is_main:
+                print(f"⚠ Failed to wrap model with DDP: {e}\n")
+    else:
+        # Single-process: move model to device
+        model.to(device)
+        if is_main:
+            if args.multi_gpu and not ddp_active:
+                print("⚠ Multi-GPU requested but DDP not active (not launched with torchrun or WORLD_SIZE<=1). Running single-process.")
+            print(f"✓ Model created\n")
 
     # Get optimizer config from file
     optimizer_config = config_data.get('optimizer', {})
@@ -455,6 +562,24 @@ def main():
         keep_last_n=args.keep_last_n_checkpoints,
         checkpoint_dir=custom_checkpoint_dir
     )
+
+    # In DDP runs only rank 0 should write checkpoints to avoid contention
+    if ddp_active and not is_main:
+        def _noop(*a, **k):
+            return None
+
+        # Create a normal manager but silence writes on non-main ranks
+        checkpoint_manager = CheckpointManager(
+            keep_last_n=args.keep_last_n_checkpoints,
+            checkpoint_dir=custom_checkpoint_dir
+        )
+        checkpoint_manager.save_training_state = _noop
+        checkpoint_manager.save_checkpoint = _noop
+    else:
+        checkpoint_manager = CheckpointManager(
+            keep_last_n=args.keep_last_n_checkpoints,
+            checkpoint_dir=custom_checkpoint_dir
+        )
 
     metrics_tracker = MetricsTracker()
 
@@ -636,17 +761,17 @@ def main():
     start_epoch = 1
     start_batch_idx = 0
     if resume_checkpoint_path:
+        # Trainer.resume_from_checkpoint returns (start_epoch, start_batch_idx)
         start_epoch, start_batch_idx = trainer.resume_from_checkpoint(resume_checkpoint_path)
 
     # Run training
-    print("\n" + "="*70)
-    if start_batch_idx > 0:
-        print(f"RESUMING TRAINING FROM EPOCH {start_epoch}, BATCH {start_batch_idx}")
-    elif start_epoch > 1:
-        print(f"RESUMING TRAINING FROM EPOCH {start_epoch}")
-    else:
-        print("STARTING TRAINING")
-    print("="*70 + "\n")
+    if is_main:
+        print("\n" + "="*70)
+        if start_epoch > 1:
+            print(f"RESUMING TRAINING FROM EPOCH {start_epoch}")
+        else:
+            print("STARTING TRAINING")
+        print("="*70 + "\n")
 
     # Determine target accuracy for early stopping
     target_accuracy = None
