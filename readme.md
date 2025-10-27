@@ -58,6 +58,12 @@ python train.py --model resnet50-pytorch --dataset imagenet --data-dir /path/to/
 | `--batch-size` | int | `256` | Training batch size |
 | `--device` | str | `auto` | Device: `cuda`, `mps`, `cpu` (auto-detects if not specified) |
 
+### Multi-GPU Training
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--multi-gpu` | flag | `False` | Enable multi-process DistributedDataParallel (launch with torchrun) |
+| `--sync-bn` | flag | `False` | Convert BatchNorm to SyncBatchNorm before wrapping with DDP |
+
 ### Optimizer & Scheduler
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -200,7 +206,62 @@ python train.py \
   --device mps
 ```
 
-### 8. CPU Training (Lower Batch Size)
+### 8. Multi-GPU Training (DistributedDataParallel)
+```bash
+# Train on 4 GPUs with torchrun (distributes batch across GPUs)
+torchrun --nproc_per_node=4 train.py \
+  --model resnet50-pytorch \
+  --dataset imagenet \
+  --data-dir /path/to/imagenet \
+  --epochs 90 \
+  --batch-size 256 \
+  --multi-gpu \
+  --scheduler cosine
+
+# Multi-GPU with SyncBatchNorm (recommended for better sync across GPUs)
+torchrun --nproc_per_node=4 train.py \
+  --model resnet50-pytorch \
+  --dataset imagenet \
+  --data-dir /path/to/imagenet \
+  --epochs 90 \
+  --batch-size 256 \
+  --multi-gpu \
+  --sync-bn \
+  --scheduler cosine
+
+# Multi-GPU with OneCycle scheduler and LR Finder
+torchrun --nproc_per_node=2 train.py \
+  --model resnet50-pytorch \
+  --dataset imagenet \
+  --data-dir ./imagenette2-160 \
+  --num-classes 10 \
+  --epochs 20 \
+  --batch-size 256 \
+  --multi-gpu \
+  --sync-bn \
+  --scheduler onecycle \
+  --lr-finder
+
+# Alternative: Using python -m torch.distributed.launch (older PyTorch versions)
+python -m torch.distributed.launch --nproc_per_node=4 train.py \
+  --model resnet50-pytorch \
+  --dataset imagenet \
+  --data-dir /path/to/imagenet \
+  --epochs 90 \
+  --batch-size 256 \
+  --multi-gpu \
+  --sync-bn
+```
+
+**Important Notes:**
+- `--batch-size` is the **total batch size** - it's automatically divided across GPUs
+- With 4 GPUs and `--batch-size 256`, each GPU processes 64 samples per batch
+- Use `torchrun` (recommended for PyTorch 1.9+) or `python -m torch.distributed.launch` (older versions)
+- `--nproc_per_node` should match the number of GPUs you want to use
+- Only rank 0 process saves checkpoints and prints logs to avoid duplicates
+- `--sync-bn` synchronizes BatchNorm statistics across GPUs for better training stability
+
+### 9. CPU Training (Lower Batch Size)
 ```bash
 # For systems without GPU
 python train.py \
@@ -214,7 +275,7 @@ python train.py \
   --device cpu
 ```
 
-### 9. ImageNet with HuggingFace Upload
+### 10. ImageNet with HuggingFace Upload
 ```bash
 # Train and auto-upload to HuggingFace Hub
 python train.py \
@@ -227,7 +288,7 @@ python train.py \
   --hf-repo username/imagenet-resnet50
 ```
 
-### 10. Minimal Training (Fast Testing)
+### 11. Minimal Training (Fast Testing)
 ```bash
 # Minimal settings for quick testing/debugging
 python train.py \
@@ -242,7 +303,7 @@ python train.py \
   --no-amp
 ```
 
-### 11. ImageNet-1K (HuggingFace) with Resume + LR Finder
+### 12. ImageNet-1K (HuggingFace) with Resume + LR Finder
 ```bash
 # IMPORTANT: ImageNet-1K is a gated dataset requiring authentication
 # First, request access at: https://huggingface.co/datasets/ILSVRC/imagenet-1k
