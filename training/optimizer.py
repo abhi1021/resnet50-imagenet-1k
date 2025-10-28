@@ -31,6 +31,7 @@ def get_optimizer(name, model, lr=0.01, momentum=0.9, weight_decay=1e-3, **kwarg
             lr=lr,
             momentum=momentum,
             weight_decay=weight_decay,
+            nesterov=True,
             **kwargs
         )
     elif name == 'adam':
