@@ -156,7 +156,7 @@ def main():
     parser.add_argument('--optimizer', type=str, default='sgd',
                        help='Optimizer: sgd, adam, adamw (default: sgd)')
     parser.add_argument('--scheduler', type=str, default='cosine',
-                       choices=['cosine', 'onecycle'],
+                       choices=['cosine', 'cosine_no_restart', 'onecycle'],
                        help='Learning rate scheduler (default: cosine)')
     parser.add_argument('--config', type=str, default='./config.json',
                        help='Path to config file (default: ./config.json)')
@@ -545,6 +545,8 @@ def main():
         scheduler_config = config_data['scheduler'].get('onecycle')
     elif args.scheduler == 'cosine' and 'scheduler' in config_data:
         scheduler_config = config_data['scheduler'].get('cosine')
+    elif args.scheduler == 'cosine_no_restart' and 'scheduler' in config_data:
+        scheduler_config = config_data['scheduler'].get('cosine_no_restart')
 
     # Create scheduler
     scheduler = get_scheduler(
@@ -727,7 +729,7 @@ def main():
                 }
                 trainer.config = training_config
 
-        elif suggested_lrs and args.scheduler == 'cosine':
+        elif suggested_lrs and args.scheduler in ['cosine', 'cosine_no_restart']:
             initial_lr = suggested_lrs.get('initial_lr')
             if initial_lr:
                 print(f"\n{'='*70}")

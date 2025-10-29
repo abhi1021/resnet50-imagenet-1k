@@ -412,7 +412,7 @@ class Trainer:
             test_loss, test_acc = self.test()
 
             # Step scheduler after epoch for CosineAnnealing (OneCycle steps per batch)
-            if self.scheduler_type == 'cosine':
+            if self.scheduler_type in ['cosine', 'cosine_no_restart']:
                 self.scheduler.step()
 
             # Check if best model BEFORE updating tracker

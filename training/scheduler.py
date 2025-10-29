@@ -2,7 +2,7 @@
 Learning rate scheduler configuration and factory.
 """
 import torch.optim as optim
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, OneCycleLR
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, CosineAnnealingLR, OneCycleLR
 
 
 def get_scheduler(name, optimizer, train_loader, epochs=100, config=None):
@@ -10,7 +10,7 @@ def get_scheduler(name, optimizer, train_loader, epochs=100, config=None):
     Get a learning rate scheduler by name.
 
     Args:
-        name: Scheduler name ('onecycle', 'cosine')
+        name: Scheduler name ('onecycle', 'cosine', 'cosine_no_restart')
         optimizer: PyTorch optimizer
         train_loader: Training data loader
         epochs: Total number of epochs
@@ -22,6 +22,7 @@ def get_scheduler(name, optimizer, train_loader, epochs=100, config=None):
     Example:
         >>> scheduler = get_scheduler('onecycle', optimizer, train_loader, epochs=100)
         >>> scheduler = get_scheduler('cosine', optimizer, train_loader)
+        >>> scheduler = get_scheduler('cosine_no_restart', optimizer, train_loader, epochs=100)
     """
     name = name.lower()
 
@@ -29,8 +30,10 @@ def get_scheduler(name, optimizer, train_loader, epochs=100, config=None):
         return _get_onecycle_scheduler(optimizer, train_loader, epochs, config)
     elif name == 'cosine':
         return _get_cosine_scheduler(optimizer, config)
+    elif name == 'cosine_no_restart':
+        return _get_cosine_no_restart_scheduler(optimizer, epochs, config)
     else:
-        raise ValueError(f"Unknown scheduler: {name}. Supported: onecycle, cosine")
+        raise ValueError(f"Unknown scheduler: {name}. Supported: onecycle, cosine, cosine_no_restart")
 
 
 def _get_onecycle_scheduler(optimizer, train_loader, epochs, config=None):
@@ -103,5 +106,34 @@ def _get_cosine_scheduler(optimizer, config=None):
         optimizer,
         T_0=default_config['T_0'],
         T_mult=default_config['T_mult'],
+        eta_min=default_config['eta_min']
+    )
+
+
+def _get_cosine_no_restart_scheduler(optimizer, epochs, config=None):
+    """
+    Get CosineAnnealingLR scheduler with configuration (no warm restarts).
+
+    Args:
+        optimizer: PyTorch optimizer
+        epochs: Total number of epochs
+        config: Cosine annealing configuration dict
+
+    Returns:
+        CosineAnnealingLR scheduler
+    """
+    # Default configuration
+    default_config = {
+        'T_max': epochs,
+        'eta_min': 1e-4
+    }
+
+    # Merge with provided config
+    if config:
+        default_config.update(config)
+
+    return CosineAnnealingLR(
+        optimizer,
+        T_max=default_config['T_max'],
         eta_min=default_config['eta_min']
     )
