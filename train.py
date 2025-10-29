@@ -659,6 +659,14 @@ def main():
 
     # Run LR Finder if requested (skip if resuming from checkpoint)
     if args.lr_finder and not resume_checkpoint_path:
+        # Warning about LR finder with DDP
+        if ddp_active and is_main:
+            print(f"\n{'='*70}")
+            print("⚠️  LR FINDER WITH MULTI-GPU TRAINING")
+            print(f"{'='*70}")
+            print("LR Finder will run on all GPUs but results may vary slightly between processes.")
+            print("This is normal behavior - the main process will use the results.")
+            print(f"{'='*70}\n")
         # Check if we have saved LR finder results to reuse
         if saved_lr_finder_results:
             # Reuse saved LR finder results
@@ -799,6 +807,10 @@ def main():
     print(f"Best Test Accuracy: {best_accuracy:.2f}%")
     print(f"Checkpoint saved to: {checkpoint_manager.get_checkpoint_dir()}")
     print(f"{'='*70}\n")
+
+    # Cleanup DDP process group
+    if ddp_active:
+        torch.distributed.destroy_process_group()
 
 
 if __name__ == "__main__":

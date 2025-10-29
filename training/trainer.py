@@ -400,6 +400,12 @@ class Trainer:
             print(f"✓ Saved initial config: {config_path}\n")
 
         for epoch in range(start_epoch, epochs + 1):
+            # Synchronize DistributedSampler at epoch start (critical for DDP)
+            if hasattr(self.train_loader.sampler, 'set_epoch'):
+                self.train_loader.sampler.set_epoch(epoch)
+            if hasattr(self.test_loader.sampler, 'set_epoch'):
+                self.test_loader.sampler.set_epoch(epoch)
+            
             # Use start_batch_idx only for the first epoch when resuming from intermediate checkpoint
             batch_idx_for_epoch = start_batch_idx if epoch == start_epoch else 0
             train_loss, train_acc = self.train_epoch(epoch, start_batch_idx=batch_idx_for_epoch)
