@@ -2,6 +2,33 @@
 
 A modular PyTorch training framework for ImageNet-1K with ResNet models, advanced augmentation, and mixed precision training.
 
+## Training Results
+
+**Best Accuracy Achieved: 73.84%** on ImageNet-1K (epoch 90)
+
+### Model Performance
+- **Architecture**: ResNet50-PyTorch (25.6M parameters)
+- **Dataset**: ImageNet-1K (1000 classes)
+- **Best Test Accuracy**: 73.84% (achieved at epoch 90)
+- **Total Training**: 92 epochs across 3 learning rate cycles
+- **Final Metrics (Epoch 92)**:
+  - Train Accuracy: 42.78% | Train Loss: 3.665
+  - Test Accuracy: 52.61% | Test Loss: 2.166
+
+### Training Configuration
+- **Batch Size**: 256
+- **Optimizer**: SGD (momentum=0.9, weight_decay=1e-3)
+- **Scheduler**: Cosine with restarts (3 cycles)
+- **Augmentation**: Strong (HorizontalFlip, ShiftScaleRotate, Cutout, ColorJitter)
+- **MixUp**: α=0.2
+- **Label Smoothing**: 0.1
+- **Mixed Precision**: Enabled (FP16)
+- **Gradient Clipping**: 1.0
+
+### Training Progression
+The model was trained with cosine learning rate scheduling across 3 complete cycles (epochs 1-30, 31-60, 61-92), achieving peak performance at epoch 90 during the final cycle.
+
+
 ## Setup Development Environment
 
 ### 1. Clone and Install Dependencies
