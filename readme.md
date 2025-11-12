@@ -1,5 +1,6 @@
 # ImageNet Training Framework
 
+
 A modular PyTorch training framework for ImageNet-1K with ResNet models, advanced augmentation, and mixed precision training.
 
 ## Training Results
