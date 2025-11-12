@@ -554,6 +554,9 @@ class Trainer:
         print(f"  Start LR: {config.get('start_lr', 1e-6)}")
         print(f"  End LR: {config.get('end_lr', 1.0)}")
         print(f"  Selection Method: {config.get('selection_method', 'steepest_gradient')}")
+        print(f"  Batches per Epoch: {config.get('batches_per_epoch', 'unlimited')}")
+        if config.get('batch_percent') is not None:
+            print(f"  Batch Percent: {config.get('batch_percent')}%")
         print(f"  Data Loader Workers: {config.get('num_workers', 4)}")
         print("="*70)
 
@@ -643,10 +646,21 @@ class Trainer:
         end_lr = config.get('end_lr', 1.0)
         selection_method = config.get('selection_method', 'steepest_gradient')
 
+        # Calculate batches_per_epoch from config
+        batches_per_epoch = config.get('batches_per_epoch', None)
+        batch_percent = config.get('batch_percent', None)
+
+        # If batch_percent is specified and batches_per_epoch is not, calculate it
+        if batch_percent is not None and batches_per_epoch is None:
+            total_batches = len(clean_loader)
+            batches_per_epoch = int(total_batches * batch_percent / 100)
+            print(f"\nCalculating batches from percentage: {batch_percent}% of {total_batches} = {batches_per_epoch} batches")
+
         lr_finder.range_test(
             start_lr=start_lr,
             end_lr=end_lr,
-            num_epochs=num_epochs
+            num_epochs=num_epochs,
+            batches_per_epoch=batches_per_epoch
         )
 
         # Get scheduler-specific LR suggestions

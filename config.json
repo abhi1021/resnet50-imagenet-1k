@@ -17,7 +17,9 @@
     "num_epochs": 2,
     "start_lr": 1e-6,
     "end_lr": 1.0,
-    "selection_method": "steepest_gradient"
+    "selection_method": "steepest_gradient",
+    "batches_per_epoch": 200,
+    "batch_percent": null
   },
   "scheduler": {
     "onecycle": {
@@ -73,7 +75,9 @@
     "num_epochs": "Number of epochs to run LR range test (default: 3, recommended: 2-5)",
     "start_lr": "Starting learning rate for range test (default: 1e-6)",
     "end_lr": "Ending learning rate for range test (default: 1.0)",
-    "selection_method": "Method for selecting optimal LR from the curve. Options: 'steepest_gradient', 'before_divergence', 'valley', 'manual'"
+    "selection_method": "Method for selecting optimal LR from the curve. Options: 'steepest_gradient', 'before_divergence', 'valley', 'manual'",
+    "batches_per_epoch": "Limit number of batches to process per epoch (default: 200, set to null for unlimited). Helps LR finder complete faster on large datasets",
+    "batch_percent": "Alternative to batches_per_epoch - specify percentage of dataset to use (0-100). If both set, batches_per_epoch takes precedence"
   },
   "lr_finder_selection_methods": {
     "steepest_gradient": {

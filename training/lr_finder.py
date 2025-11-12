@@ -53,7 +53,7 @@ class LRFinder:
         self.initial_optimizer_state = None
 
 
-    def range_test(self, start_lr=1e-6, end_lr=1.0, num_epochs=3, smoothing=0.05):
+    def range_test(self, start_lr=1e-6, end_lr=1.0, num_epochs=3, smoothing=0.05, batches_per_epoch=None):
         """
         Run the LR range test.
 
@@ -62,6 +62,7 @@ class LRFinder:
             end_lr: Ending learning rate
             num_epochs: Number of epochs to run
             smoothing: Exponential smoothing factor for loss
+            batches_per_epoch: Number of batches to process per epoch (None = unlimited)
 
         Returns:
             tuple: (learning_rates, losses)
@@ -71,6 +72,10 @@ class LRFinder:
         print("="*70)
         print(f"Testing learning rates from {start_lr:.2e} to {end_lr:.2e}")
         print(f"Running for {num_epochs} epochs")
+        if batches_per_epoch is not None:
+            print(f"Batches per epoch: {batches_per_epoch} (limited)")
+        else:
+            print(f"Batches per epoch: {len(self.data_loader)} (all)")
         print(f"Note: Using clean data (no MixUp, no Label Smoothing)")
         print("="*70 + "\n")
 
@@ -79,7 +84,8 @@ class LRFinder:
         self.initial_optimizer_state = self.optimizer.state_dict()
 
         # Calculate total iterations
-        total_iters = len(self.data_loader) * num_epochs
+        batches_to_use = batches_per_epoch if batches_per_epoch is not None else len(self.data_loader)
+        total_iters = batches_to_use * num_epochs
         lr_lambda = lambda x: np.exp(x * np.log(end_lr / start_lr) / total_iters)
 
         # Set initial LR
@@ -92,15 +98,25 @@ class LRFinder:
         smoothed_loss = 0.0
 
         for epoch in range(num_epochs):
+            # Create progress bar description with batch limit info
+            desc = f"LR Finder Epoch {epoch+1}/{num_epochs}"
+            if batches_per_epoch is not None:
+                desc += f" ({batches_per_epoch} batches)"
+
             pbar = tqdm(
                 self.data_loader,
-                desc=f"LR Finder Epoch {epoch+1}/{num_epochs}",
+                desc=desc,
                 disable=not self.progress_bar_config.get('enable_for_file_output', True),
                 miniters=self.progress_bar_config.get('miniters', 50),
-                mininterval=self.progress_bar_config.get('mininterval', 30.0)
+                mininterval=self.progress_bar_config.get('mininterval', 30.0),
+                total=batches_to_use
             )
 
             for batch_idx, (data, target) in enumerate(pbar):
+                # Stop if we've reached the batch limit for this epoch
+                if batches_per_epoch is not None and batch_idx >= batches_per_epoch:
+                    break
+
                 data, target = data.to(self.device), target.to(self.device)
 
                 # Forward pass (no mixup, no label smoothing)
