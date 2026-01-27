@@ -7,6 +7,10 @@ A modular PyTorch training framework for ImageNet-1K with ResNet models, advance
 
 **Best Accuracy Achieved: 73.84%** on ImageNet-1K (epoch 90)
 
+## DEMO
+
+[Hugging Face Spaces Demo](https://huggingface.co/spaces/agileabhi/resnet50-imagenet1k?logs=container)
+
 ### Model Performance
 - **Architecture**: ResNet50-PyTorch (25.6M parameters)
 - **Dataset**: ImageNet-1K (1000 classes)
